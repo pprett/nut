@@ -25,8 +25,7 @@ import numpy as np
 
 from itertools import chain
 
-class Domain(object):
-    pass  
+from ..util import trace, timeit
 
 def mask(instances, auxtask):
     count = 0
@@ -36,7 +35,7 @@ def mask(instances, auxtask):
 	    if idx in indices:
 		p = np.where(indices == idx)[0]
 		if len(p) > 0:
-		    doc['f1'][p] = 0.0
+		    x['f1'][p] = 0.0
 		    count += 1
     return count
 
@@ -52,11 +51,12 @@ def autolabel(instances, auxtask):
 	
     return labels
 
+@timeit
 def count(*datasets):
     if len(datasets) > 1:
 	assert functools.reduce(operator.eq,[ds.dim for ds in datasets])
     counts = np.zeros((ds.dim,),dtype = np.uint16)
-    for x,y in chain(datasets):
+    for x, y in chain(*datasets):
 	for idx, freq in x:
-	    counts[term]+=1
+	    counts[idx]+=1
     return counts

@@ -24,11 +24,13 @@ import numpy as np
 import bolt
 import sparsesvd
 import math
-import util
+from ..structlearn import util
 
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from scipy import sparse
+
+from ..util import timeit
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __copyright__ = "Apache License v2.0"
@@ -56,7 +58,7 @@ class StructLearner(object):
     This class learns the structural parameter theta from a seq of auxiliary tasks and provides functionality to project instances into the new feature space induced by theta. 
     """
 
-    def __init__(self, k, ds, auxtasks, aux_trainer, training_strategy):
+    def __init__(self, k, ds, auxtasks, classifier_trainer, training_strategy):
 	if k < 1 or k > len(auxtasks):
 	    raise Error("0 < k < m")
 	self.ds = ds
@@ -64,20 +66,22 @@ class StructLearner(object):
 	self.n = ds.n
 	self.dim = ds.dim
 	self.k = k
-	self.aux_trainer = aux_trainer
+	self.classifier_trainer = classifier_trainer
 	self.training_strategy = training_strategy
-	self.W = sparse.coo_matrix((self.dim, self.n), dtype=np.float64)
+	self.W = sparse.dok_matrix((self.dim, self.n), dtype=np.float64)
 	
-
+    @timeit
     def learn(self):
 	"""
 	Learns the structural parameter theta from the auxiliary tasks.
 	"""
 	self.training_strategy.train_aux_classifiers(self)
-	Ut, s, Vt = sparsesvd.sparsesvd(self.W.tocsc(), self.k)
+	self.W = self.W.tocsc()
+	Ut, s, Vt = sparsesvd.sparsesvd(self.W, self.k)
 	print "Ut.shape = (%d,%d)" % Ut.shape
 	self.theta = Ut.T	
 
+    @timeit
     def project(self, ds, dense = True):
 	"""Project dataset `ds` using structural parameter theta.
 
@@ -132,21 +136,30 @@ class SerialTrainingStrategy(TrainingStrategy):
     Trains one auxiliary classifier after another. Does not exploit multi core architectures. 
     """
 
+    @timeit
+    def _train_aux_classifier(self, i, auxtask, original_instances,
+			      classifier_trainer, W, dim):
+	instances = deepcopy(original_instances)
+	labels = util.autolabel(instances, auxtask)
+	util.mask(instances, auxtask)
+	ds = bolt.MemoryDataset(dim, instances, labels)
+	w = classifier_trainer.train_classifier(ds)
+	for j in w.nonzero()[0]:
+	    W[j,i] = w[j]
+	if i % 10 == 0:
+	    print "%d classifiers trained..." % i
+
     def train_aux_classifiers(self, struct_learner):
 	dim = struct_learner.ds.dim
 	auxtasks = struct_learner.auxtasks
+	struct_learner.ds.shuffle(seed = 13)
 	original_instances = struct_learner.ds.instances[struct_learner.ds._idx]
 	W = struct_learner.W
 	classifier_trainer = struct_learner.classifier_trainer
 
 	for i, auxtask in enumerate(auxtasks):
-	    instances = deepcopy(original_instances)
-	    labels = util.autolabel(instances, auxtask)
-	    util.mask(instances, auxtask)
-	    ds = bolt.MemoryDataset(dim, instances, labels)
-	    w = classifier_trainer.train_classifier(ds)
-	    for j in w.nonzero()[0]:
-		W[j,i] = w[j]
+	    self._train_aux_classifier(i, auxtask, original_instances,
+				       classifier_trainer, W, dim)
 
 class AuxTrainer(object):
     __metaclass__ = ABCMeta
@@ -167,7 +180,6 @@ class ElasticNetTrainer(AuxTrainer):
 	self.alpha = alpha
 	self.epochs = epochs
 	
-
     def train_classifier(self, ds):
 	epochs = self.epochs
 	if epochs <= 0:

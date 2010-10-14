@@ -1,4 +1,4 @@
-#!/usr/bin/python2.6
+#!/usr/bin/python
 #
 # Copyright (C) 2010 Peter Prettenhofer.
 #
@@ -19,42 +19,54 @@ clscl
 =====
 
 """
+import sys
 import numpy as np
 import bolt
 
-import structlearn
-import pivotselection
-import util
+from itertools import islice,ifilter
 
+from ..structlearn import pivotselection
+from ..structlearn import util
+from ..structlearn import structlearn
+from ..bow import vocabulary, disjoint_voc, load
+from ..util import timeit
 
-from itertools import islice
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __copyright__ = "Apache License v2.0"
 
+class CLSCLModel(object):
+    def __init__(self):
+	pass
 
-class CLSCL(object):
+class CLSCLTrainer(object):
 
-    def __init__(self, S, T):
-	self.S = S
-	self.T = T
-	self.pivotselector = pivotselection.MISelector()
+    def __init__(self, s_train, s_unlabeled, t_unlabeled,
+		 pivotselector, pivottranslator):
+	self.s_train = s_train
+	self.s_unlabeled = s_unlabeled
+	self.t_unlabeled = t_unlabeled
+	self.pivotselector = pivotselector
+	self.pivottranslator = pivottranslator
 
+    @timeit
     def select_pivots(self, m, phi):
-	vp = self.pivotselector.select(self.S.train)
-	candidates = ((ws, self.pivottranslator(ws)) for ws in vp \
-		      if self.pivottranslator(ws) != None)
-	counts = util.count(self.S.unlabeled, self.T.unlabeled)
+	vp = self.pivotselector.select(self.s_train)
+	
+	candidates = ifilter(lambda x: x[1] != None, ((ws, self.pivottranslator[ws]) for ws in vp))
+	
+	counts = util.count(self.s_unlabeled, self.t_unlabeled)
 	pivots = ((ws,wt) for ws, wt in candidates \
 			 if counts[ws] >= phi and counts[wt] >= phi)
 	pivots = [pivot for pivot in islice(pivots,m)]
-	print "num pivots: %d. " % len(pivots)
 	return pivots	
 
-    def learn(self, m, phi, k):
+    def train(self, m, phi, k):
 	pivots = self.select_pivots(m, phi)
+	print("|pivots| = %d" % len(pivots))
 	print "create StructLearner"
-	ds = bolt.io.MemoryDataset.merge((self.S.unlabeled, self.T.unlabeled))
+	ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
+					  self.t_unlabeled))
 	struct_learner = structlearn.StructLearner(k, ds, pivots,
 				       structlearn.ElasticNetTrainer(0.00001,0.85),
 				       structlearn.SerialTrainingStrategy())
@@ -62,198 +74,108 @@ class CLSCL(object):
 	struct_learner.learn()
 	print "struct_learner.learn() [done]"
 	print "projecting domains... ",
-	_project_domains(struct_learner, S, T, verbose = 1)
+	self.project(struct_learner, verbose = 1)
 	print "[done]"
 
-    def pivottranslator(self, ws):
-	term_ws = self.S.idx_to_term[ws]
-	term_wt = self._translate(term_ws)
-	wt = self.T.voc[term_wt]
-	return wt
+    def project(self, struct_learner, verbose = 1):
+	s_train = struct_learner.project(self.s_train, dense = True)
+	s_unlabeled = struct_learner.project(self.s_unlabeled, dense = True)
+	t_unlabeled = struct_learner.project(self.t_unlabeled, dense = True)
 
-    def _translate(self, term_ws):
-	return "wurst"
-
-def _project_domains(struct_learner, S, T, tostandardize = True,
-		     toavgnorm = True, verbose = 1):
-    """Project `S` and `T` onto the space induced by `theta`.  """
-    nS, nT = util.Domain(), util.Domain()
-    for domain, new_domain in ((S,nS),(T,nT)):
-	for member in ["train", "test", "unlabeled"]:
-	    try:
-		ds = domain.__getattribute__[member]
-		new_domain.__setattr__(member,struct_learner.project(ds, dense = True))
-	    except AttributeError:
-		pass
-    
-    if tostandardize:
-	if verbose > 0:
-	    print "Standardize features."
-	train_dat = np.concatenate((nS.train, nS.unlabeled, nT.unlabeled)) 
-	mean = train_dat.mean(axis=0)
-	std = train_dat.std(axis=0)
-	for new_domain in (nS, nT):
-	    for member in ["train", "test", "unlabeled"]:
-		try:
-		    instances = new_domain.__getattribute__[member]
-		    standardize(instances, mean, std)
-		except AttributeError:
-		    pass
-    else:
-	if verbose > 0:
-	    print "No standardization."
-
-    if toavgnorm:
-	norms = np.sqrt((nS.train * nS.train).sum(axis=1))
+	data = np.concatenate((s_train, s_unlabeled, t_unlabeled)) 
+	mean = data.mean(axis=0)
+	std  = data.std(axis=0)
+	self.mean, self.std = mean, std
+	standardize(s_train, mean, std)
+	
+	norms = np.sqrt((s_train * s_train).sum(axis=1))
 	avg_norm = np.mean(norms)
-	if verbose > 1:
-	    print "Old avg norm: ", avg_norm
-	for new_domain in (nS, nT):
-	    for member in ["train", "test", "unlabeled"]:
-		try:
-		    instances = new_domain.__getattribute__[member]
-		    instances /= avg_norm
-		except AttributeError:
-		    pass
-		
-	norms = np.sqrt((nS.train * nS.train).sum(axis=1))
-	avg_norm = np.mean(norms)
-	if verbose > 0:
-	    print "New avg norm: ", avg_norm
-    else:
-	if verbose > 0:
-	    print "No average norm."
+	s_train /= avg_norm
 
-    dim = struct_learner.theta.shape[0]
-    voc = dict([("fx%d" % i,i) for i in range(struct_learner.theta.shape[0])])
-    idx_to_term = dict(((idx, term) for term, idx in voc.items()))
-    for domain, new_domain in ((S,nS),(T,nT)):
-	domain.voc = voc
-	domain.idx_to_term = idx_to_term
-	for member in ["train", "test", "unlabeled"]:
-	    try:
-		instances = new_domain.__getattribute__[member]
-		instances = structlearn.to_sparse_bolt(instances)
-		ds = domain.__getattribute__[member]
-		ds.instances = instances
-		ds.dim = dim
-	    except AttributeError:
-		pass
+	dim = struct_learner.theta.shape[0]
+	self.s_train.instances = structlearn.to_sparse_bolt(s_train)
+	self.s_train.dim = dim
+
+	del self.s_unlabeled
+	del self.t_unlabeled
 
 def standardize(docterms, mean, std, alpha = 1.0):
     docterms -= mean
     docterms /= std
     docterms *= alpha
 
-def parse_bow(line):
-    tokens = [tf.split(':') for tf in line.rstrip().split(' ')]
-    s,label = tokens[-1]
-    assert s == "#label#"
-    tokens = tokens[:-1]
-    return label,[t for t in tokens if len(t) == 2 and len(t[0]) > 0]
+class DictTranslator(object):
 
-class Experiment(object):
-    
-    def __init__(self, slang, tlang, sourceDir, targetDir,
-		 domain):
-	canonical = lambda s: s if s[-1] == "/" else s + "/"
-	self.sourceDir = canonical(sourceDir)
-	self.targetDir = canonical(targetDir)
-	self.slang = slang
-	self.tlang = tlang
-	self.domain = domain
-	self.nunlabeled = 50000
+    def __init__(self, dictionary, s_ivoc, t_voc):
+	self.dictionary = dictionary
+	self.s_ivoc = s_ivoc
+	self.t_voc = t_voc
+	print("DictTranslator contains %d translations." % len(dictionary))
 
-    def createVoc(self, mindf = 2):
-	SFD = FreqDist()
-	TFD = FreqDist()
-	lc = 0
-	nunlabeled = self.nunlabeled
-	for directory, fd in [(self.sourceDir, SFD),(self.targetDir, TFD)]:
-	    for s in ["train","unlabeled"]:
-		with open(directory + s + ".processed") as f:
-		    for i,line in enumerate(f):
-			if i >= nunlabeled and s == "unlabeled":
-			    break
-			lc += 1
-			label, tokens = parse_bow(line)
-			for token,freq in tokens:
-			    fd.inc(token)
-			    
-	Svoc = set([t for t,c in SFD.iteritems() if c >= mindf])
-	Tvoc = set([t for t,c in TFD.iteritems() if c >= mindf])
-	if langs[0] == langs[1]:
-	    Svoc, Tvoc, dim = self.createConjunctiveVoc(Svoc, Tvoc)
+    def __getitem__(self, ws):
+	try:
+	    wt = self.normalize(self.dictionary[self.s_ivoc[ws]])
+	except KeyError:
+	    wt = None
+	return wt
+
+    def translate(self, ws):
+	return self[ws]
+
+    def normalize(self, wt):
+	wt = wt.encode("utf-8") if isinstance(wt,unicode) else wt
+	wt = wt.split(" ")[0]
+	if wt in self.t_voc:
+	    return self.t_voc[wt]
 	else:
-	    Svoc, Tvoc, dim = self.createDisjointVoc(Svoc, Tvoc)
-	return Svoc, Tvoc, dim
-
-    def createDisjointVoc(self,Svoc,Tvoc):
-	if self.verbose > 2:
-	    print "createDisjointVoc"
-	V_S = len(Svoc)
-	V_T = len(Tvoc)
-	Svoc = dict(zip(Svoc,range(V_S)))
-	Tvoc = dict(zip(Tvoc,range(V_S,V_S+V_T)))
-	return Svoc,Tvoc, len(Svoc)+len(Tvoc)
-
-    def createConjunctiveVoc(self,Svoc,Tvoc):
-	if self.verbose > 2:
-	    print "createConjunctiveVoc"
-	uniq_Svoc = sorted(Svoc.difference(Tvoc))
-	uniq_Tvoc = sorted(Tvoc.difference(Svoc))
-	shared_voc = sorted(Svoc.intersection(Tvoc))
-	voc = list(uniq_Svoc+shared_voc+uniq_Tvoc)
-	voc = dict(zip(voc,range(len(voc))))
-	return voc, voc, len(voc)
-
-    def loadDataText(self):
-	Svoc,Tvoc,dim = self.createVoc()
-	if self.verbose > 1:
-	    print "|Svoc|\t\t|Tvoc|"
-	    print "%d\t&\t%d" % (len(Svoc), len(Tvoc))
-	S = Domain()
-	T = Domain()
-	labelMap = {'positive':1,'negative':-1,'unlabeled':0}
-	nunlabeled = self.nunlabeled
-	for directory, domain, voc in [(self.sourceDir,S,Svoc),(self.targetDir,T,Tvoc)]:
-	    lang = directory.split("/")[-3]
-	    domain.lang = lang
-	    domain.voc = voc
-	    domain.idxToTerm = dict(((idx, term) for term, idx in voc.items()))
-	    for s in ["train","unlabeled","test"]:
-		reviews = []
-		labels = []
-		with open(directory + s + ".processed") as f:
-		    for i, line in enumerate(f):
-			if s == "unlabeled" and i >= nunlabeled:
-			    break
-			label, tokens = bow.parseBow(line)
-			review = bow.vectorize(tokens,voc)
-			doc = np.array(review,dtype = bolt.sparsedtype)
-			norm = np.linalg.norm(doc['f1']) 
-			if norm > 0.0:
-			    doc['f1'] /= norm
-			reviews.append(doc)
-			labels.append(labelMap[label])
-
-		instances = bolt.io.fromlist(reviews, np.object)
-		labels = bolt.io.fromlist(labels, np.float32)
-		examples = bolt.MemoryDataset(dim,instances, labels)
-		domain.__setattr__(s,examples)
-		
-	return S,T
+	    return None
+	
+    @classmethod
+    def load(cls, fname, s_ivoc, t_voc):
+	dictionary = []
+	with open(fname) as f:
+	    for i, line in enumerate(f):
+		ws, wt = line.rstrip().split("\t")
+		dictionary.append((ws, wt))
+	dictionary = dict(dictionary)
+	return DictTranslator(dictionary, s_ivoc, t_voc)
     
-def main(argv):
-    root = argv[0]
-    slang = argv[1]
-    tlang = argv[2]
-    domain = argv[3]
-    "%s/%"
+def main():
+    maxlines = 50000
+    argv = sys.argv[1:]
+
+    slang = argv[0]
+    tlang = argv[1]
+
+    fname_s_train = argv[2]
+    fname_s_unlabeled = argv[3]
+    fname_t_unlabeled = argv[4]
+    fname_dict = argv[5]
+
+    s_voc = vocabulary(fname_s_train, fname_s_unlabeled,
+		       mindf = 2, maxlines = maxlines)
+    t_voc = vocabulary(fname_t_unlabeled,
+		       mindf = 2, maxlines = maxlines)
+    s_voc, t_voc, dim = disjoint_voc(s_voc,t_voc)
+    s_ivoc = dict([(idx,term) for term, idx in s_voc.items()])
+    print("|V_S| = %d\n|V_T| = %d" % (len(s_voc), len(t_voc)))
+    print("|V| = %d" % dim)
     
+    s_train = load(fname_s_train, s_voc, dim)
+    s_unlabeled = load(fname_s_unlabeled, s_voc, dim, maxlines = maxlines)
+    t_unlabeled = load(fname_t_unlabeled, t_voc, dim, maxlines = maxlines)
+    print("|s_train| = %d" % s_train.n)
+    print("|s_unlabeled| = %d" % s_unlabeled.n)
+    print("|t_unlabeled| = %d" % t_unlabeled.n)
+
     
-    clscl_learner = CLSCL(S, T)
-    clscl_learner.learn(450, 30, 100)
+    translator = DictTranslator.load(fname_dict, s_ivoc, t_voc)
+    pivotselector = pivotselection.MISelector()
+    clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
+				 t_unlabeled, pivotselector,
+				 translator)
+    
+    clscl_trainer.train(450, 30, 100)
     
     
 

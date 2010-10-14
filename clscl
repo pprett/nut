@@ -1,4 +1,4 @@
-#!/usr/bin/python2.6
+#!/usr/bin/python
 #
 # Copyright (C) 2010 Peter Prettenhofer.
 #
@@ -14,29 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-util
-====
+import nut.structlearn.clscl
 
-"""
-
-import time
-
-__author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
-__copyright__ = "Apache License v2.0"
-
-
-def timeit(func):
-  def wrapper(*arg, **kargs):
-      t1 = time.time()
-      res = func(*arg, **kargs)
-      t2 = time.time()
-      print '%s took %0.3f sec' % (func.func_name, (t2-t1))
-      return res
-  return wrapper 
-
-def trace(func):
-    def wrapper(*args, **kargs):
-	print "calling %s with args %s, %s" % (func.__name__, args, kargs)
-	return func(*args, **kargs)
-    return wrapper
+nut.structlearn.clscl.main()

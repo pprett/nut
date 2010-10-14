@@ -19,6 +19,7 @@ pivotselection
 ==============
 
 """
+from __future__ import division
 import numpy as np
 import bolt
 
@@ -27,6 +28,8 @@ from itertools import cycle, izip, count, islice
 from operator import itemgetter
 
 import util
+
+from ..util import trace, timeit
 
 class PivotSelector(object):
     __meta__ = ABCMeta
@@ -92,6 +95,7 @@ class MISelector(PivotSelector):
     def select_binary(self, ds, preselection = None):
 	return mutualinformation(ds, preselection)
 
+@timeit
 def mutualinformation(bs, preselection = None):
     """Computes mutual information of each column of `docterms` and `labels`.
     Returns the indices of the top `k` columns according to MI.
