@@ -15,19 +15,17 @@
 # limitations under the License.
 
 """
-Nut
-====
+structlearn
+===========
 
-Natural language Understanding Toolkit
+Structural Learning package.
 
-Documentation is available in the docstrings. 
+This package provides functionality for
 
-Subpackages
------------
+ - Alternating Structural Optimization (ASO)
+ - Structural Correspondence Learning (SCL)
+ - Cross-Language Structural Correspondence Learning (CL-SCL)
 
-
-
-see http://github.com/pprett/nut
 
 """
 

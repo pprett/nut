@@ -9,8 +9,10 @@ To install nut you need:
    * Python 2.5 or 2.6
    * Numpy (>= 1.1)
    * Bolt  (>= 1.4) [#f1]_
+   * Sparsesvd (>= 0.1.4) [#f2]_
 
 .. [#f1] http://github.com/pprett/bolt
+.. [#f2] http://pypi.python.org/pypi/sparsesvd/0.1.4
 
 Installation
 ------------

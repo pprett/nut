@@ -15,21 +15,22 @@
 # limitations under the License.
 
 """
-Nut
+util
 ====
-
-Natural language Understanding Toolkit
-
-Documentation is available in the docstrings. 
-
-Subpackages
------------
-
-
-
-see http://github.com/pprett/nut
 
 """
 
+import time
+
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __copyright__ = "Apache License v2.0"
+
+
+def timeit(func):
+  def wrapper(*arg, **kargs):
+      t1 = time.time()
+      res = func(*arg, **kargs)
+      t2 = time.time()
+      print '%s took %0.3f sec' % (func.func_name, (t2-t1))
+      return res
+  return wrapper 
