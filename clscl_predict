@@ -16,4 +16,4 @@
 
 import nut.structlearn.clscl
 
-nut.structlearn.clscl.main()
+nut.structlearn.clscl.predict()

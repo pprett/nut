@@ -19,24 +19,18 @@ structlearn
 ===========
 
 """
+from __future__ import division
 
 import numpy as np
 import bolt
 import sparsesvd
-import math
-from ..structlearn import util
 
-from abc import ABCMeta, abstractmethod
-from copy import deepcopy
-from scipy import sparse
-
-from ..util import timeit
+from ..util import timeit, trace
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __copyright__ = "Apache License v2.0"
 
 
-T = 10**6
 """The minimum number of observed training examples for SGD. 
 """
 
@@ -68,151 +62,39 @@ class StructLearner(object):
 	self.k = k
 	self.classifier_trainer = classifier_trainer
 	self.training_strategy = training_strategy
-	self.W = sparse.dok_matrix((self.dim, self.n), dtype=np.float64)
 	
     @timeit
     def learn(self):
 	"""
 	Learns the structural parameter theta from the auxiliary tasks.
 	"""
-	self.training_strategy.train_aux_classifiers(self)
-	self.W = self.W.tocsc()
-	Ut, s, Vt = sparsesvd.sparsesvd(self.W, self.k)
+	W = self.training_strategy.train_aux_classifiers(self)
+	Ut, s, Vt = sparsesvd.sparsesvd(W, self.k)
 	print "Ut.shape = (%d,%d)" % Ut.shape
-	self.theta = Ut.T	
+	self.thetat = Ut.T	
 
-    @timeit
-    def project(self, ds, dense = True):
-	"""Project dataset `ds` using structural parameter theta.
+def project_instance_dense(x, thetat):
+    tmp = np.zeros((thetat.shape[1],), dtype = np.float64)
+    for j, v in x:
+	tmp += v * thetat[j]
+    return tmp
 
-	:arg ds: A `bolt.Dataset` instance.
-	:arg dense: Whether the output should be a numpy array or a seq of bolt instances.
-	:returns: The projected dataset as a numpy array or a seq of bolt instances. 
-	"""
-	if not self.theta:
-	    raise Error("Structural learner not parametrized - make sure you run `learn()`.")
-	k, dim = self.theta.shape
-	ds_prime = np.empty((ds.n, k), dtype = np.float64)
-	for i, x in enumerate(ds.instances):
-	    ds_prime[i] = self._project_instance_dense(x)
-	if not dense:
-	    ds.instances = to_sparse_bolt(ds_prime)
-	    ds.dim = k
-	    ds_prime = ds
-	return ds_prime
+def project(ds, thetat, dense = True):
+    """Projects the `bolt.io.Dataset` onto the feature space
+    induced by `thetat`.
 
-    def _project_instance_dense(self, x):
-	theta = self.theta
-	tmp = np.zeros((self.k,), dtype = np.float64)
-	for j,v in x:
-	    tmp += v * theta[j]
-	return tmp
-
-    def project_instance(self, x, dense = True):
-	tmp = self._project_instance_dense(x)
-	if dense:
-	    return tmp
-	else:
-	    return bolt.dense2sparse(tmp)
-
-
-class TrainingStrategy(object):
-    """An interface of different training strategies for the auxiliary classifiers. 
-
-    Use this to implement various parallel or distributed training strategies.
-    Delegates the training of a single classifier to a concrete `AuxTrainer`.
+    If `dense` is True it returns a new numpy array (a design matrix);
+    else it returns a new `bolt.io.MemoryDataset`. 
     """
-    __metaclass__ = ABCMeta
-
-    @abstractmethod
-    def train_aux_classifiers(self, struct_learner):
-	"""Abstract method to train auxiliary classifiers, i.e. to fill `struct_learner.W`.
-	"""
-	return 0
-
-class SerialTrainingStrategy(TrainingStrategy):
-    """A serial training strategy.
-
-    Trains one auxiliary classifier after another. Does not exploit multi core architectures. 
-    """
-
-    @timeit
-    def _train_aux_classifier(self, i, auxtask, original_instances,
-			      classifier_trainer, W, dim):
-	instances = deepcopy(original_instances)
-	labels = util.autolabel(instances, auxtask)
-	util.mask(instances, auxtask)
-	ds = bolt.MemoryDataset(dim, instances, labels)
-	w = classifier_trainer.train_classifier(ds)
-	for j in w.nonzero()[0]:
-	    W[j,i] = w[j]
-	if i % 10 == 0:
-	    print "%d classifiers trained..." % i
-
-    def train_aux_classifiers(self, struct_learner):
-	dim = struct_learner.ds.dim
-	auxtasks = struct_learner.auxtasks
-	struct_learner.ds.shuffle(seed = 13)
-	original_instances = struct_learner.ds.instances[struct_learner.ds._idx]
-	W = struct_learner.W
-	classifier_trainer = struct_learner.classifier_trainer
-
-	for i, auxtask in enumerate(auxtasks):
-	    self._train_aux_classifier(i, auxtask, original_instances,
-				       classifier_trainer, W, dim)
-
-class AuxTrainer(object):
-    __metaclass__ = ABCMeta
-
-    @abstractmethod
-    def train_classifier(self, ds):
-	return None
+    dim, k = thetat.shape
+    ds_prime = np.empty((ds.n, k), dtype = np.float64)
+    for i, x in enumerate(ds.instances):
+	ds_prime[i] = project_instance_dense(x, thetat)
+    if not dense:
+	instances = to_sparse_bolt(ds_prime)
+	dim = k
+	ds_prime = bolt.io.MemoryDataset(dim, instances, ds.labels)
+	ds_prime._idx = ds._idx
+    return ds_prime
 
 
-class ElasticNetTrainer(AuxTrainer):
-    """Trains the auxiliary classifiers using Elastic Net regularization.
-
-    See [Prettenhofer and Stein, 2010b].
-    """
-
-    def __init__(self, reg, alpha, epochs = -1):
-	self.reg = reg
-	self.alpha = alpha
-	self.epochs = epochs
-	
-    def train_classifier(self, ds):
-	epochs = self.epochs
-	if epochs <= 0:
-	    epochs = int(math.ceil(T / ds.n))
-	model = bolt.LinearModel(ds.dim, biasterm = False)
-	loss = bolt.ModifiedHuber()
-	sgd = bolt.SGD(loss, self.reg, epochs = epochs, norm = 3, alpha = self.alpha)
-	sgd.train(model, ds, verbose = 0, shuffle = False)
-	return model.w
-
-class L2Trainer(AuxTrainer):
-    """Trains the auxiliary classifiers using L2 regularization.
-
-    If `truncation` is True, negative weights are set to zero.
-    See [Ando and Zhang, 2005] or [Blitzer et al, 2006]. 
-    """
-
-    def __init__(self, reg, epochs = -1, truncation = False):
-	self.reg = reg
-	self.epochs = epochs
-	self.truncation = truncation
-	
-
-    def train_classifier(self, ds):
-	epochs = self.epochs
-	if epochs <= 0:
-	    epochs = int(math.ceil(T / ds.n))
-	model = bolt.LinearModel(ds.dim, biasterm = False)
-	loss = bolt.ModifiedHuber()
-	sgd = bolt.SGD(loss, self.reg, epochs = epochs, norm = 2)
-	sgd.train(model, ds, verbose = 0, shuffle = False)
-	w = model.w
-	if self.truncation:
-	    w[w<0.0] = 0.0
-	return w
-	

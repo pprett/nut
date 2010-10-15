@@ -19,9 +19,13 @@ clscl
 =====
 
 """
+from __future__ import division
+
 import sys
 import numpy as np
+import math
 import bolt
+import cPickle as pickle
 
 from itertools import islice,ifilter
 
@@ -29,15 +33,40 @@ from ..structlearn import pivotselection
 from ..structlearn import util
 from ..structlearn import structlearn
 from ..bow import vocabulary, disjoint_voc, load
-from ..util import timeit
-
+from ..util import timeit, trace
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __copyright__ = "Apache License v2.0"
 
 class CLSCLModel(object):
-    def __init__(self):
-	pass
+    def __init__(self, thetat, mean = None, std = None, avg_norm = None):
+	self.thetat = thetat
+	self.s_voc = None
+	self.t_voc = None
+	self.mean = mean
+	self.std = std
+	self.avg_norm = avg_norm
+
+    @timeit
+    def project(self, ds):
+	"""Projects the given dataset onto the space induces by `self.thetat`
+	and postprocesses the projection using `mean`, `std`, and `avg_norm`.
+
+	:returns: A new bolt.io.MemoryDataset equal to `ds` but contains projected feature vectors. 
+	"""
+	dense_instances = structlearn.project(ds, self.thetat, dense = True)
+	
+	if self.mean != None and self.std != None:
+	    standardize(dense_instances, self.mean, self.std)
+	if self.avg_norm != None:
+	    dense_instances /= self.avg_norm
+
+	instances = structlearn.to_sparse_bolt(dense_instances)
+	dim = self.thetat.shape[1]
+	labels = ds.labels
+	new_ds = bolt.io.MemoryDataset(dim, instances, labels)
+	new_ds._idx = ds._idx
+	return new_ds
 
 class CLSCLTrainer(object):
 
@@ -68,19 +97,19 @@ class CLSCLTrainer(object):
 	ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
 					  self.t_unlabeled))
 	struct_learner = structlearn.StructLearner(k, ds, pivots,
-				       structlearn.ElasticNetTrainer(0.00001,0.85),
+				       structlearn.ElasticNetTrainer(0.00001,0.85, 10**6.0),
 				       structlearn.SerialTrainingStrategy())
-	print "struct_learner.learn() "
 	struct_learner.learn()
-	print "struct_learner.learn() [done]"
-	print "projecting domains... ",
-	self.project(struct_learner, verbose = 1)
-	print "[done]"
+	self.project(struct_learner.thetat, verbose = 1)
+	return CLSCLModel(struct_learner.thetat, mean = self.mean, std = self.std,
+			  avg_norm = self.avg_norm)
+	
 
-    def project(self, struct_learner, verbose = 1):
-	s_train = struct_learner.project(self.s_train, dense = True)
-	s_unlabeled = struct_learner.project(self.s_unlabeled, dense = True)
-	t_unlabeled = struct_learner.project(self.t_unlabeled, dense = True)
+    @timeit
+    def project(self, thetat, verbose = 1):
+	s_train = structlearn.project(self.s_train, thetat, dense = True)
+	s_unlabeled = structlearn.project(self.s_unlabeled, thetat, dense = True)
+	t_unlabeled = structlearn.project(self.t_unlabeled, thetat, dense = True)
 
 	data = np.concatenate((s_train, s_unlabeled, t_unlabeled)) 
 	mean = data.mean(axis=0)
@@ -90,14 +119,18 @@ class CLSCLTrainer(object):
 	
 	norms = np.sqrt((s_train * s_train).sum(axis=1))
 	avg_norm = np.mean(norms)
+	self.avg_norm = avg_norm
 	s_train /= avg_norm
 
-	dim = struct_learner.theta.shape[0]
+	dim = thetat.shape[0]
 	self.s_train.instances = structlearn.to_sparse_bolt(s_train)
 	self.s_train.dim = dim
 
 	del self.s_unlabeled
 	del self.t_unlabeled
+
+    
+	
 
 def standardize(docterms, mean, std, alpha = 1.0):
     docterms -= mean
@@ -140,7 +173,7 @@ class DictTranslator(object):
 	dictionary = dict(dictionary)
 	return DictTranslator(dictionary, s_ivoc, t_voc)
     
-def main():
+def train():
     maxlines = 50000
     argv = sys.argv[1:]
 
@@ -175,10 +208,43 @@ def main():
 				 t_unlabeled, pivotselector,
 				 translator)
     
-    clscl_trainer.train(450, 30, 100)
-    
-    
+    model = clscl_trainer.train(450, 30, 100)
+    model.s_voc = s_voc
+    model.t_voc = t_voc
+    f = open(argv[6], "wb+")
+    pickle.dump(model, f)
+    f.close()
 
+def predict():
+    argv = sys.argv[1:]
 
-if __name__ == "__main__":
-    main()
+    fname_s_train = argv[0]
+    fname_model = argv[1]
+    fname_t_test = argv[2]
+    reg = float(argv[3])
+
+    f = open(fname_model, "rb")
+    CLSCLModel = pickle.load(f)
+    f.close()
+
+    s_voc = CLSCLModel.s_voc
+    t_voc = CLSCLModel.t_voc
+    dim = len(s_voc) + len(t_voc)
+    print("|V_S| = %d\n|V_T| = %d" % (len(s_voc), len(t_voc)))
+    print("|V| = %d" % dim)
+
+    s_train = load(fname_s_train, s_voc, dim)
+    t_test  = load(fname_t_test, t_voc, dim)
+    
+    cl_train = CLSCLModel.project(s_train)
+    cl_test  = CLSCLModel.project(t_test)
+    
+    epochs = int(math.ceil(10**6 / cl_train.n))
+    model = bolt.LinearModel(cl_train.dim, biasterm = False)
+    loss = bolt.ModifiedHuber()
+    sgd = bolt.SGD(loss, reg, epochs = epochs, norm = 2)
+    cl_train.shuffle(1)
+    sgd.train(model, cl_train, verbose = 0, shuffle = False)
+    acc = 100.0 - bolt.eval.errorrate(model, cl_test)
+    print "ACC: %.2f" % acc
+    
