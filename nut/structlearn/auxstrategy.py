@@ -34,6 +34,7 @@ import os
 import json
 import time
 import tempfile
+import shutil
 
 from scipy import sparse
 
