@@ -32,6 +32,8 @@ from itertools import islice,ifilter
 from ..structlearn import pivotselection
 from ..structlearn import util
 from ..structlearn import structlearn
+from ..structlearn import auxtrainer
+from ..structlearn import auxstrategy
 from ..bow import vocabulary, disjoint_voc, load
 from ..util import timeit, trace
 
@@ -203,8 +205,8 @@ def train():
     translator = DictTranslator.load(fname_dict, s_ivoc, t_voc)
     pivotselector = pivotselection.MISelector()
 
-    trainer = structlearn.ElasticNetTrainer(0.00001, 0.85, 10**6.0),
-    strategy = structlearn.HadoopTrainingStrategy()#SerialTrainingStrategy()
+    trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6.0),
+    strategy = auxstrategy.HadoopTrainingStrategy()#SerialTrainingStrategy()
     
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
 				 t_unlabeled, pivotselector,
