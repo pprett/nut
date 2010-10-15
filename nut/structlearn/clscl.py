@@ -107,15 +107,17 @@ class CLSCLTrainer(object):
 						   self.strategy)
 	struct_learner.learn()
 	self.project(struct_learner.thetat, verbose = 1)
-	return CLSCLModel(struct_learner.thetat, mean = self.mean, std = self.std,
-			  avg_norm = self.avg_norm)
+	return CLSCLModel(struct_learner.thetat, mean = self.mean,
+			  std = self.std, avg_norm = self.avg_norm)
 	
 
     @timeit
     def project(self, thetat, verbose = 1):
 	s_train = structlearn.project(self.s_train, thetat, dense = True)
-	s_unlabeled = structlearn.project(self.s_unlabeled, thetat, dense = True)
-	t_unlabeled = structlearn.project(self.t_unlabeled, thetat, dense = True)
+	s_unlabeled = structlearn.project(self.s_unlabeled, thetat,
+					  dense = True)
+	t_unlabeled = structlearn.project(self.t_unlabeled, thetat,
+					  dense = True)
 
 	data = np.concatenate((s_train, s_unlabeled, t_unlabeled)) 
 	mean = data.mean(axis=0)
@@ -213,7 +215,7 @@ def train():
     pivotselector = pivotselection.MISelector()
 
     trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6.0)
-    strategy = auxstrategy.SerialTrainingStrategy()#SerialTrainingStrategy()
+    strategy = auxstrategy.HadoopTrainingStrategy()#SerialTrainingStrategy()
     
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
 				 t_unlabeled, pivotselector,

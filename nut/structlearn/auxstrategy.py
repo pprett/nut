@@ -15,18 +15,17 @@
 # limitations under the License.
 
 """
-auxtrainer
-==========
+auxstrategy
+===========
 
-A module containing different trainers for the auxiliary tasks. 
+A module containing different trainer strategies for the auxiliary tasks.
 
 """
 from __future__ import division
 
+import sys
 import bolt
 import numpy as np
-from abc import ABCMeta, abstractmethod
-from copy import deepcopy
 import subprocess
 import shlex
 import inspect
@@ -36,6 +35,8 @@ import time
 import tempfile
 import shutil
 
+from abc import ABCMeta, abstractmethod
+from copy import deepcopy
 from scipy import sparse
 
 from ..structlearn import util
@@ -104,7 +105,8 @@ class HadoopTrainingStrategy(TrainingStrategy):
 	row   = []
 	col   = []
 	tmpdir = tempfile.mkdtemp()
-	run_id = os.path.split(tmpdir)
+	print "tempdir:", tmpdir
+	run_id = os.path.split(tmpdir)[-1]
 	try:
 	    self._mktasks(tmpdir, auxtasks)
 	    ds.store(tmpdir+"/examples.npy")
@@ -159,11 +161,13 @@ class HadoopTrainingStrategy(TrainingStrategy):
 	"""
 	import dumbomapper
 	import auxtrainer
+	
 	fmapper = inspect.getsourcefile(dumbomapper)
 	fauxtrainer = inspect.getsourcefile(auxtrainer)
+	futil = inspect.getsourcefile(util)
 
 	param = {"ftasks":ftasks, "fexamples":fexamples, "fout":fout,
-		 "streaming_jar":streaming_jar,
+		 "streaming_jar":streaming_jar, "futil":futil, 
 		 "fmapper":fmapper, "fauxtrainer":fauxtrainer}
 	
 	cmd = """hadoop jar %(streaming_jar)s \
@@ -172,12 +176,13 @@ class HadoopTrainingStrategy(TrainingStrategy):
 	-mapper dumbomapper.py \
 	-file %(fmapper)s \
 	-file %(fauxtrainer)s \
+	-file %(futil)s \
 	-cacheFile %(fexamples)s#examples.npy \
 	-jobconf mapred.reduce.tasks=0 \
 	-jobconf mapred.input.format.class=org.apache.hadoop.mapred.lib.NLineInputFormat \
 	-jobconf mapred.line.input.format.linespermap=1
 	""" % param
-	print "Hadoop command:\n",cmd
+	
 	cmd = shlex.split(cmd)
 	dn = open("/dev/null")
 	retcode = subprocess.call(cmd, stdout = dn, stderr = dn)
@@ -204,6 +209,7 @@ class HadoopTrainingStrategy(TrainingStrategy):
 		row.append(fidx)
 		col.append(pivotid)
 		w_data.append(fval)
+
 	W = sparse.coo_matrix((w_data,(row,col)),
 			      (dim, m),
 			      dtype = np.float64)
