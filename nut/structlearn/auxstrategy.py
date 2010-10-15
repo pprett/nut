@@ -63,7 +63,7 @@ class SerialTrainingStrategy(TrainingStrategy):
     """	
 
     @timeit
-    def train_aux_classifiers(self, struct_learner):
+    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer):
 	dim = struct_learner.ds.dim
 	auxtasks = struct_learner.auxtasks
 	w_data = []

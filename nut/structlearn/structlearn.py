@@ -68,7 +68,7 @@ class StructLearner(object):
 	"""
 	Learns the structural parameter theta from the auxiliary tasks.
 	"""
-	W = self.training_strategy.train_aux_classifiers(self)
+	W = self.training_strategy.train_aux_classifiers(self.ds, self.auxtasks, self.classifier_trainer)
 	Ut, s, Vt = sparsesvd.sparsesvd(W, self.k)
 	print "Ut.shape = (%d,%d)" % Ut.shape
 	self.thetat = Ut.T	
