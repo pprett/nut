@@ -71,19 +71,19 @@ class CLSCLModel(object):
 class CLSCLTrainer(object):
 
     def __init__(self, s_train, s_unlabeled, t_unlabeled,
-		 pivotselector, pivottranslator):
+		 pivotselector, pivottranslator, trainer, strategy):
 	self.s_train = s_train
 	self.s_unlabeled = s_unlabeled
 	self.t_unlabeled = t_unlabeled
 	self.pivotselector = pivotselector
 	self.pivottranslator = pivottranslator
+	self.trainer = trainer
+	self.strategy = strategy
 
     @timeit
     def select_pivots(self, m, phi):
 	vp = self.pivotselector.select(self.s_train)
-	
 	candidates = ifilter(lambda x: x[1] != None, ((ws, self.pivottranslator[ws]) for ws in vp))
-	
 	counts = util.count(self.s_unlabeled, self.t_unlabeled)
 	pivots = ((ws,wt) for ws, wt in candidates \
 			 if counts[ws] >= phi and counts[wt] >= phi)
@@ -96,9 +96,7 @@ class CLSCLTrainer(object):
 	print "create StructLearner"
 	ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
 					  self.t_unlabeled))
-	struct_learner = structlearn.StructLearner(k, ds, pivots,
-				       structlearn.ElasticNetTrainer(0.00001,0.85, 10**6.0),
-				       structlearn.SerialTrainingStrategy())
+	struct_learner = structlearn.StructLearner(k, ds, pivots,self.trainer, self.strategy)
 	struct_learner.learn()
 	self.project(struct_learner.thetat, verbose = 1)
 	return CLSCLModel(struct_learner.thetat, mean = self.mean, std = self.std,
@@ -204,11 +202,16 @@ def train():
     
     translator = DictTranslator.load(fname_dict, s_ivoc, t_voc)
     pivotselector = pivotselection.MISelector()
+
+    trainer = structlearn.ElasticNetTrainer(0.00001, 0.85, 10**6.0),
+    strategy = structlearn.HadoopTrainingStrategy()#SerialTrainingStrategy()
+    
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
 				 t_unlabeled, pivotselector,
-				 translator)
-    
+				 translator, trainer,
+				 strategy)
     model = clscl_trainer.train(450, 30, 100)
+    
     model.s_voc = s_voc
     model.t_voc = t_voc
     f = open(argv[6], "wb+")
