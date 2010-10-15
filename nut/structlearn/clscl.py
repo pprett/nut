@@ -90,9 +90,9 @@ class CLSCLTrainer(object):
 	pivots = ((ws,wt) for ws, wt in candidates \
 			 if counts[ws] >= phi and counts[wt] >= phi)
 	pivots = [pivot for pivot in islice(pivots,m)]
-	terms = [(self.s_ivoc[ws],self.t_ivoc[wt]) for ws,wt in pivots]
-	for term in terms[:50]:
-	    print term
+	#terms = [(self.s_ivoc[ws],self.t_ivoc[wt]) for ws,wt in pivots]
+	#for term in terms[:50]:
+	#    print term
 	
 	return pivots	
 
@@ -102,7 +102,9 @@ class CLSCLTrainer(object):
 	ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
 					  self.t_unlabeled))
 	ds.shuffle(13)
-	struct_learner = structlearn.StructLearner(k, ds, pivots,self.trainer, self.strategy)
+	struct_learner = structlearn.StructLearner(k, ds, pivots,
+						   self.trainer,
+						   self.strategy)
 	struct_learner.learn()
 	self.project(struct_learner.thetat, verbose = 1)
 	return CLSCLModel(struct_learner.thetat, mean = self.mean, std = self.std,
@@ -210,7 +212,7 @@ def train():
     translator = DictTranslator.load(fname_dict, s_ivoc, t_voc)
     pivotselector = pivotselection.MISelector()
 
-    trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6.0),
+    trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6.0)
     strategy = auxstrategy.SerialTrainingStrategy()#SerialTrainingStrategy()
     
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
