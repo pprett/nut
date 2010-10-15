@@ -90,14 +90,18 @@ class CLSCLTrainer(object):
 	pivots = ((ws,wt) for ws, wt in candidates \
 			 if counts[ws] >= phi and counts[wt] >= phi)
 	pivots = [pivot for pivot in islice(pivots,m)]
+	terms = [(self.s_ivoc[ws],self.t_ivoc[wt]) for ws,wt in pivots]
+	for term in terms[:50]:
+	    print term
+	
 	return pivots	
 
     def train(self, m, phi, k):
 	pivots = self.select_pivots(m, phi)
 	print("|pivots| = %d" % len(pivots))
-	print "create StructLearner"
 	ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
 					  self.t_unlabeled))
+	ds.shuffle(13)
 	struct_learner = structlearn.StructLearner(k, ds, pivots,self.trainer, self.strategy)
 	struct_learner.learn()
 	self.project(struct_learner.thetat, verbose = 1)
@@ -143,7 +147,7 @@ class DictTranslator(object):
 	self.dictionary = dictionary
 	self.s_ivoc = s_ivoc
 	self.t_voc = t_voc
-	print("DictTranslator contains %d translations." % len(dictionary))
+	print("debug: DictTranslator contains %d translations." % len(dictionary))
 
     def __getitem__(self, ws):
 	try:
@@ -157,7 +161,7 @@ class DictTranslator(object):
 
     def normalize(self, wt):
 	wt = wt.encode("utf-8") if isinstance(wt,unicode) else wt
-	wt = wt.split(" ")[0]
+	wt = wt.split(" ")[0].lower()
 	if wt in self.t_voc:
 	    return self.t_voc[wt]
 	else:
@@ -191,13 +195,14 @@ def train():
 		       mindf = 2, maxlines = maxlines)
     s_voc, t_voc, dim = disjoint_voc(s_voc,t_voc)
     s_ivoc = dict([(idx,term) for term, idx in s_voc.items()])
+    t_ivoc = dict([(idx,term) for term, idx in t_voc.items()])
     print("|V_S| = %d\n|V_T| = %d" % (len(s_voc), len(t_voc)))
-    print("|V| = %d" % dim)
+    print("  |V| = %d" % dim)
     
     s_train = load(fname_s_train, s_voc, dim)
     s_unlabeled = load(fname_s_unlabeled, s_voc, dim, maxlines = maxlines)
     t_unlabeled = load(fname_t_unlabeled, t_voc, dim, maxlines = maxlines)
-    print("|s_train| = %d" % s_train.n)
+    print("    |s_train| = %d" % s_train.n)
     print("|s_unlabeled| = %d" % s_unlabeled.n)
     print("|t_unlabeled| = %d" % t_unlabeled.n)
 
@@ -206,12 +211,14 @@ def train():
     pivotselector = pivotselection.MISelector()
 
     trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6.0),
-    strategy = auxstrategy.HadoopTrainingStrategy()#SerialTrainingStrategy()
+    strategy = auxstrategy.SerialTrainingStrategy()#SerialTrainingStrategy()
     
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
 				 t_unlabeled, pivotselector,
 				 translator, trainer,
 				 strategy)
+    clscl_trainer.s_ivoc = s_ivoc
+    clscl_trainer.t_ivoc = t_ivoc
     model = clscl_trainer.train(450, 30, 100)
     
     model.s_voc = s_voc

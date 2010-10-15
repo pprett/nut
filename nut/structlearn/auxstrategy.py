@@ -53,7 +53,7 @@ class TrainingStrategy(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def train_aux_classifiers(self, struct_learner):
+    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer):
 	"""Abstract method to train auxiliary classifiers, i.e. to fill `struct_learner.W`.
 	"""
 	return 0
@@ -66,20 +66,17 @@ class SerialTrainingStrategy(TrainingStrategy):
 
     @timeit
     def train_aux_classifiers(self, ds, auxtasks, classifier_trainer):
-	dim = struct_learner.ds.dim
-	auxtasks = struct_learner.auxtasks
+	dim = ds.dim
 	w_data = []
 	row   = []
 	col   = []
-	struct_learner.ds.shuffle(seed = 13)
-	original_instances = struct_learner.ds.instances[struct_learner.ds._idx]
-	classifier_trainer = struct_learner.classifier_trainer
+	original_instances = ds.instances[ds._idx]
 	
 	for j, auxtask in enumerate(auxtasks):
 	    instances = deepcopy(original_instances)
 	    labels = util.autolabel(instances, auxtask)
 	    util.mask(instances, auxtask)
-	    ds = bolt.MemoryDataset(dim, instances, labels)
+	    ds = bolt.io.MemoryDataset(dim, instances, labels)
 	    w = classifier_trainer.train_classifier(ds)
 	    for i in w.nonzero()[0]:
 		row.append(i)
@@ -129,7 +126,7 @@ class HadoopTrainingStrategy(TrainingStrategy):
     def _mktasks(self, tmpdir, auxtasks, alpha = 0.85, norm = 3, reg = 0.00001):
 	f = open(tmpdir + "/tasks.txt","w+")
 	for i, task in enumerate(auxtasks):
-	    params = {"pivotid":i, "task":task,
+	    params = {"taskid":i, "task":str(task),
 		      "alpha":alpha,
 		      "norm":norm, "reg":reg}
 	    f.write(json.dumps(params))
