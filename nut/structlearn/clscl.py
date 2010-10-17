@@ -211,7 +211,7 @@ def train():
     translator = DictTranslator.load(fname_dict, s_ivoc, t_voc)
     pivotselector = pivotselection.MISelector()
 
-    trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6.0)
+    trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6)
     strategy = auxstrategy.HadoopTrainingStrategy()
     
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,

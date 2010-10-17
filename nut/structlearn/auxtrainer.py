@@ -47,7 +47,7 @@ class ElasticNetTrainer(AuxTrainer):
 	self.num_iterations = num_iterations
 	
     def train_classifier(self, ds):
-	epochs = int(math.ceil(float(self.num_iterations) / float(ds.n)))
+	epochs = int(math.ceil(self.num_iterations / ds.n))
 	model = bolt.LinearModel(ds.dim, biasterm = False)
 	loss = bolt.ModifiedHuber()
 	sgd = bolt.SGD(loss, self.reg, epochs = epochs, norm = 3,

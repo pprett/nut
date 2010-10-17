@@ -63,7 +63,7 @@ class StructLearner(object):
 	self.k = k
 	self.classifier_trainer = classifier_trainer
 	self.training_strategy = training_strategy
-	#self.create_inverted_index()
+	self.create_inverted_index()
 
     @timeit
     def create_inverted_index(self):
@@ -87,7 +87,7 @@ class StructLearner(object):
 	"""
 	Learns the structural parameter theta from the auxiliary tasks.
 	"""
-	W = self.training_strategy.train_aux_classifiers(self.ds, self.auxtasks, self.classifier_trainer, inverted_index = None)
+	W = self.training_strategy.train_aux_classifiers(self.ds, self.auxtasks, self.classifier_trainer, inverted_index = self.inverted_index)
 	density = W.nnz / float(W.shape[0]*W.shape[1])
 	print "density: %.4f" % density
 	Ut, s, Vt = sparsesvd.sparsesvd(W, self.k)
