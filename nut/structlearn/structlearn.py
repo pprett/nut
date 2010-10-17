@@ -63,7 +63,7 @@ class StructLearner(object):
 	self.k = k
 	self.classifier_trainer = classifier_trainer
 	self.training_strategy = training_strategy
-	self.create_inverted_index()
+	#self.create_inverted_index()
 
     @timeit
     def create_inverted_index(self):

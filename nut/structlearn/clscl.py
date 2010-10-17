@@ -135,10 +135,7 @@ class CLSCLTrainer(object):
 	self.s_train.dim = dim
 
 	del self.s_unlabeled
-	del self.t_unlabeled
-
-    
-	
+	del self.t_unlabeled	
 
 def standardize(docterms, mean, std, alpha = 1.0):
     docterms -= mean
@@ -215,7 +212,7 @@ def train():
     pivotselector = pivotselection.MISelector()
 
     trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6.0)
-    strategy = auxstrategy.SerialTrainingStrategy()
+    strategy = auxstrategy.HadoopTrainingStrategy()
     
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
 				 t_unlabeled, pivotselector,
