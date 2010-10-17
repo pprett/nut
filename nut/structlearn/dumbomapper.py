@@ -56,6 +56,7 @@ def main(separator='\t'):
     # input comes from STDIN (standard input)
 
     ds = bolt.io.MemoryDataset.load("examples.npy", verbose = 0)
+    original_instances = ds.instances[ds._idx]
     
     for line in sys.stdin.xreadlines():
 	line = line.rstrip()
@@ -65,10 +66,10 @@ def main(separator='\t'):
 	taskid = params[u"taskid"]
 	auxtask = eval(params[u"task"])
 	reg = params[u"reg"]
-	alpha = params.get(u"alpha",0.15)
+	alpha = params.get(u"alpha",0.85)
 	norm = params.get(u"norm",3)
 	
-	instances = copy.deepcopy(ds.instances)
+	instances = copy.deepcopy(original_instances)
 	labels = util.autolabel(instances, auxtask)
 	util.mask(instances, auxtask)
 	maskedds = bolt.io.MemoryDataset(ds.dim, instances, labels)
