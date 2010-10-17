@@ -24,6 +24,7 @@ from __future__ import division
 import numpy as np
 import bolt
 import sparsesvd
+from collections import defaultdict
 
 from ..util import timeit, trace
 
@@ -62,13 +63,31 @@ class StructLearner(object):
 	self.k = k
 	self.classifier_trainer = classifier_trainer
 	self.training_strategy = training_strategy
+	self.create_inverted_index()
+
+    @timeit
+    def create_inverted_index(self):
+	iidx = defaultdict(list)
+	fid_task_map = defaultdict(list)
+	for i, task in enumerate(self.auxtasks):
+	    for fx in task:
+		fid_task_map[fx].append(i)
+		
+	for i, x in enumerate(self.ds.iterinstances()):
+	    for fid, fval in x:
+		if fid in fid_task_map:
+		    for task_id in fid_task_map[fid]:
+			iidx[task_id].append(i)
+
+	iidx = dict((task_id, np.unique(np.array(occurances))) for task_id, occurances in iidx.iteritems())
+	self.inverted_index = iidx
 	
     @timeit
     def learn(self):
 	"""
 	Learns the structural parameter theta from the auxiliary tasks.
 	"""
-	W = self.training_strategy.train_aux_classifiers(self.ds, self.auxtasks, self.classifier_trainer)
+	W = self.training_strategy.train_aux_classifiers(self.ds, self.auxtasks, self.classifier_trainer, inverted_index = None)
 	density = W.nnz / float(W.shape[0]*W.shape[1])
 	print "density: %.4f" % density
 	Ut, s, Vt = sparsesvd.sparsesvd(W, self.k)

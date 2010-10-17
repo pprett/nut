@@ -31,13 +31,13 @@ import shlex
 import inspect
 import os
 import json
-import time
 import tempfile
 import shutil
 
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from scipy import sparse
+from time import time
 
 from ..structlearn import util
 from ..util import timeit, trace
@@ -54,7 +54,7 @@ class TrainingStrategy(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer):
+    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer, inverted_index = None):
 	"""Abstract method to train auxiliary classifiers, i.e. to fill `struct_learner.W`.
 	"""
 	return 0
@@ -66,7 +66,7 @@ class SerialTrainingStrategy(TrainingStrategy):
     """	
 
     @timeit
-    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer):
+    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer, inverted_index = None):
 	dim = ds.dim
 	w_data = []
 	row   = []
@@ -74,15 +74,27 @@ class SerialTrainingStrategy(TrainingStrategy):
 	original_instances = ds.instances[ds._idx]
 	
 	for j, auxtask in enumerate(auxtasks):
+	    #t0 = time()
 	    instances = deepcopy(original_instances)
-	    labels = util.autolabel(instances, auxtask)
-	    util.mask(instances, auxtask)
+	    #print "aux task (copy) took %.3g sec." % (time() - t0)
+	    if inverted_index is None:
+		util.mask(instances, auxtask)
+		labels = util.autolabel(instances, auxtask)
+	    else:
+		occurances = inverted_index[j]
+		util.mask(instances[occurances], auxtask)
+		labels = np.ones((instances.shape[0],), dtype = np.float32)
+		labels *= -1.0
+		labels[occurances] = 1.0
 	    ds = bolt.io.MemoryDataset(dim, instances, labels)
+	    #print "aux task (copy + ds) took %.3g sec." % (time() - t0)
 	    w = classifier_trainer.train_classifier(ds)
+	    #print "aux task (copy + ds + sgd) took %.3g sec." % (time() - t0)
 	    for i in w.nonzero()[0]:
 		row.append(i)
 		col.append(j)
 		w_data.append(w[i])
+	    #print "aux task (copy + ds + sgd + set W) took %.3g sec." % (time() - t0)
 	    if j % 10 == 0:
 		print "%d classifiers trained..." % j
 
@@ -98,7 +110,7 @@ class HadoopTrainingStrategy(TrainingStrategy):
     """
     
     @timeit
-    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer):
+    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer, inverted_index = None):
 	dim = ds.dim
 	m = len(auxtasks)
 	w_data = []

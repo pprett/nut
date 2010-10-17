@@ -215,7 +215,7 @@ def train():
     pivotselector = pivotselection.MISelector()
 
     trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6.0)
-    strategy = auxstrategy.HadoopTrainingStrategy()#SerialTrainingStrategy()
+    strategy = auxstrategy.SerialTrainingStrategy()
     
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
 				 t_unlabeled, pivotselector,
