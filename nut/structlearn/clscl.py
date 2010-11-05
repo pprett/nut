@@ -32,7 +32,40 @@ __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __version__ = "0.1"
 
 class CLSCLModel(object):
-    def __init__(self, thetat, mean = None, std = None, avg_norm = None):
+    """
+
+    Parameters
+    ----------
+    thetat : array, shape = [|voc|, k]
+        Theta transposed.
+    mean : array, shape = [|voc|]
+        Mean value of each feature. 
+    std : array, shape = [|voc|]
+        Standard deviation of each feature.
+        Used to post-process the projection.
+    avg_norm : float
+        The average L2 norm of the training data.
+        Used to post-process the projection.
+
+    Attributes
+    ----------
+    `thetat` : array, shape = [|voc|, k]
+        Theta transposed.
+    `mean` : array, shape = [|voc|]
+        Mean value of each feature. 
+    `std` : array, shape = [|voc|]
+        Standard deviation of each feature.
+        Used to post-process the projection.
+    `avg_norm` : float
+        The average L2 norm of the training data.
+        Used to post-process the projection.
+    `s_voc` : dict
+        Source vocabulary.
+    `t_voc` : dict
+        Target vocabulary.
+
+    """
+    def __init__(self, thetat, mean=None, std=None, avg_norm=None):
 	self.thetat = thetat
 	self.s_voc = None
 	self.t_voc = None
@@ -45,7 +78,16 @@ class CLSCLModel(object):
 	"""Projects the given dataset onto the space induces by `self.thetat`
 	and postprocesses the projection using `mean`, `std`, and `avg_norm`.
 
-	:returns: A new bolt.io.MemoryDataset equal to `ds` but contains projected feature vectors. 
+        Parameters
+        ----------
+        ds : bolt.io.MemoryDataset
+            The dataset to be projected.
+
+        Returns
+        -------
+        bolt.io.MemoryDataset
+	    A new bolt.io.MemoryDataset equal to `ds`
+            but contains projected feature vectors. 
 	"""
 	dense_instances = structlearn.project(ds, self.thetat, dense = True)
 	
@@ -62,6 +104,44 @@ class CLSCLModel(object):
 	return new_ds
 
 class CLSCLTrainer(object):
+    """Trainer class that creates CLSCLModel objects.
+
+    Parameters
+    ----------
+    s_train : bolt.io.MemoryDataset
+        Labeled training data in the source language.
+    s_unlabeled : bolt.io.MemoryDataset
+        Unlabeled data in the source language.
+    t_unlabeled : bolt.io.MemoryDataset
+        Unlabeled data in the target language.
+    pivotselector : PivotSelector
+        Pivot selector to select words from the source vocabulary
+        for potential pivots.
+    pivotselector : PivotTranslator
+        Translates words from the source to the target vocabulary (1-1).
+    trainer : AuxTrainer
+        Trainer for the pivot classifiers. 
+    strategy : AuxStrategy
+        Processing strategy for the pivot classifier training. 
+
+    Attributes
+    ----------
+    `s_train` : bolt.io.MemoryDataset
+        Labeled training data in the source language.
+    `s_unlabeled` : bolt.io.MemoryDataset
+        Unlabeled data in the source language.
+    `t_unlabeled` : bolt.io.MemoryDataset
+        Unlabeled data in the target language.
+    `pivotselector` : PivotSelector
+        Pivot selector to select words from the source vocabulary
+        for potential pivots.
+    `pivotselector` : PivotTranslator
+        Translates words from the source to the target vocabulary (1-1).
+    `trainer` : AuxTrainer
+        Trainer for the pivot classifiers. 
+    `strategy` : AuxStrategy
+        Processing strategy for the pivot classifier training. 
+    """
 
     def __init__(self, s_train, s_unlabeled, t_unlabeled,
 		 pivotselector, pivottranslator, trainer, strategy):
@@ -75,8 +155,33 @@ class CLSCLTrainer(object):
 
     @timeit
     def select_pivots(self, m, phi):
+        """Selects the pivots.
+        First, it selects words from the source vocabulary using
+        the `pivotselector` member. Than, the source words are translated
+        using the `pivottranslator` member. Finally, the support condition
+        is enforced by eliminating those pivot candidates which occur less
+        then `phi` times in the unlabeled data. At most `m` pivots are selected.
+
+        Parameter
+        ---------
+        m : int
+            The desired number of pivots.
+        phi : int
+            The minimum support of a pivot in the unlabeled data.
+
+        Returns
+        -------
+        list of tuples, len(list) <= m
+            A list of tuples (w_s, w_t) where w_s is the vocabulary
+            index of the source pivot word and w_t is the index of
+            the target word.
+            The number of pivots might be smaller than `m`. 
+        
+        """
 	vp = self.pivotselector.select(self.s_train)
-	candidates = ifilter(lambda x: x[1] != None, ((ws, self.pivottranslator[ws]) for ws in vp))
+	candidates = ifilter(lambda x: x[1] != None,
+                             ((ws, self.pivottranslator[ws])
+                              for ws in vp))
 	counts = util.count(self.s_unlabeled, self.t_unlabeled)
 	pivots = ((ws,wt) for ws, wt in candidates \
 			 if counts[ws] >= phi and counts[wt] >= phi)
@@ -88,6 +193,23 @@ class CLSCLTrainer(object):
 	return pivots	
 
     def train(self, m, phi, k):
+        """Trains the model using parameters `m`, `phi`, and `k`.
+
+        Parameters
+        ----------
+        m : int
+            Number of pivots.
+        phi : int
+            Minimum support of pivots in unlabeled data.
+        k : int
+            Dimensionality of the cross-lingual representation.
+
+        Returns
+        -------
+        CLSCLModel
+            The trained model. 
+
+        """
 	pivots = self.select_pivots(m, phi)
 	print("|pivots| = %d" % len(pivots))
 	ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
@@ -103,12 +225,22 @@ class CLSCLTrainer(object):
 	
 
     @timeit
-    def project(self, thetat, verbose = 1):
+    def project(self, thetat, verbose=1):
+        """Projects `s_train`, `s_unlabeled` and `t_unlabeled`
+        onto the subspace induced by theta transposed, `thetat`,
+        and post-processes the projected data.
+
+        Post-processes the projected data by a) standardizing
+        (0 mean, unit variance; where mean and variance are estimated from
+        labeled and unlabeled data) and b) scaling by a factor beta
+        such that the average L2 norm of the training examples
+        equals 1. 
+        """
 	s_train = structlearn.project(self.s_train, thetat, dense = True)
 	s_unlabeled = structlearn.project(self.s_unlabeled, thetat,
-					  dense = True)
+					  dense=True)
 	t_unlabeled = structlearn.project(self.t_unlabeled, thetat,
-					  dense = True)
+					  dense=True)
 
 	data = np.concatenate((s_train, s_unlabeled, t_unlabeled)) 
 	mean = data.mean(axis=0)
@@ -128,18 +260,26 @@ class CLSCLTrainer(object):
 	del self.s_unlabeled
 	del self.t_unlabeled	
 
-def standardize(docterms, mean, std, alpha = 1.0):
+def standardize(docterms, mean, std, alpha=1.0):
+    """Standardize document-term matrix `docterms`
+    to 0 mean and variance 1. `alpha` is an optional
+    scaling factor. 
+    """
     docterms -= mean
     docterms /= std
     docterms *= alpha
 
 class DictTranslator(object):
+    """Pivot translation oracle backed by a bilingual
+    dictionary represented as a tab separated text file. 
+    """
 
     def __init__(self, dictionary, s_ivoc, t_voc):
 	self.dictionary = dictionary
 	self.s_ivoc = s_ivoc
 	self.t_voc = t_voc
-	print("debug: DictTranslator contains %d translations." % len(dictionary))
+	print("debug: DictTranslator contains " \
+              "%d translations." % len(dictionary))
 
     def __getitem__(self, ws):
 	try:
@@ -170,6 +310,9 @@ class DictTranslator(object):
 	return DictTranslator(dictionary, s_ivoc, t_voc)
 
 def train_args_parser():
+    """Create argument and option parser for the
+    training script. 
+    """
     description = """Prefixes `s_` and `t_` refer to source and target language, resp.
 Train and unlabeled files are expected to be in Bag-of-Words format.
     """
