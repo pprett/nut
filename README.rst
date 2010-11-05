@@ -87,6 +87,7 @@ References
 ----------
 
 [1] http://pprett.github.com/bolt/
+
 [2] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
 
 [Prettenhofer, P. and Stein, B., 2010] Cross-Language Text Classification using Structural Correspondence Learning. In Proceedings of ACL '10.
