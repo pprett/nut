@@ -1,18 +1,8 @@
 #!/usr/bin/python
 #
-# Copyright (C) 2010 Peter Prettenhofer.
+# Author: Peter Prettenhofer <peter.prettenhofer@gmail.com>
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# License: BSD Style
 
 """
 clscl
@@ -24,8 +14,9 @@ from __future__ import division
 import sys
 import numpy as np
 import math
-import bolt
 import cPickle as pickle
+import optparse
+import bolt
 
 from itertools import islice,ifilter
 
@@ -38,7 +29,7 @@ from ..bow import vocabulary, disjoint_voc, load
 from ..util import timeit, trace
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
-__copyright__ = "Apache License v2.0"
+__version__ = "0.1"
 
 class CLSCLModel(object):
     def __init__(self, thetat, mean = None, std = None, avg_norm = None):
@@ -101,7 +92,7 @@ class CLSCLTrainer(object):
 	print("|pivots| = %d" % len(pivots))
 	ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
 					  self.t_unlabeled))
-	ds.shuffle(13)
+	ds.shuffle(9)
 	struct_learner = structlearn.StructLearner(k, ds, pivots,
 						   self.trainer,
 						   self.strategy)
@@ -177,11 +168,70 @@ class DictTranslator(object):
 		dictionary.append((ws, wt))
 	dictionary = dict(dictionary)
 	return DictTranslator(dictionary, s_ivoc, t_voc)
+
+def train_args_parser():
+    description = """Prefixes `s_` and `t_` refer to source and target language, resp.
+Train and unlabeled files are expected to be in Bag-of-Words format.
+    """
+    parser = optparse.OptionParser(usage="%prog [options] " \
+                                   "s_lang t_lang s_train_file " \
+                                   "s_unlabeled_file t_unlabeled_file " \
+                                   "dict_file model_file",
+                                   version="%prog " + __version__,
+                                   description = description)
+    
+    parser.add_option("-v","--verbose",
+                      dest="verbose",
+                      help="verbose output",
+                      default=1,
+                      metavar="[0,1,2]",
+                      type="int")
+
+    parser.add_option("-k",
+                      dest="k",
+                      help="dimensionality of cross-lingual representation.",
+                      default=100,
+                      metavar="int",
+                      type="int")
+
+    parser.add_option("-m",
+                      dest="m",
+                      help="number of pivots.",
+                      default=450,
+                      metavar="int",
+                      type="int")
+
+    parser.add_option("--max-unlabeled",
+                      dest="max_unlabeled",
+                      help="max number of unlabeled documents to read;" \
+                      "-1 for unlimited.",
+                      default=-1,
+                      metavar="int",
+                      type="int")
+
+    parser.add_option("-p", "--phi",
+                      dest="phi",
+                      help="minimum support of pivots.",
+                      default=30,
+                      metavar="int",
+                      type="int")
+    return parser
+    
     
 def train():
-    maxlines = 50000
-    argv = sys.argv[1:]
+    """Training script for CLSCL.
 
+    FIXME: works for binary classification only.
+    TODO: multi-class classification.
+    TODO: different translators. 
+
+    Usage: ./clscl_train slang tlang strain sunlabeled tunlabeled dict out
+    """
+    parser = train_args_parser()
+    options, argv = parser.parse_args()
+    if len(argv) != 7:
+        parser.error("incorrect number of arguments (use `--help` for help).")
+        
     slang = argv[0]
     tlang = argv[1]
 
@@ -190,37 +240,44 @@ def train():
     fname_t_unlabeled = argv[4]
     fname_dict = argv[5]
 
+    # Create vocabularies
     s_voc = vocabulary(fname_s_train, fname_s_unlabeled,
-		       mindf = 2, maxlines = maxlines)
+		       mindf=2,
+                       maxlines=options.max_unlabeled)
     t_voc = vocabulary(fname_t_unlabeled,
-		       mindf = 2, maxlines = maxlines)
+		       mindf=2,
+                       maxlines=options.max_unlabeled)
     s_voc, t_voc, dim = disjoint_voc(s_voc,t_voc)
     s_ivoc = dict([(idx,term) for term, idx in s_voc.items()])
     t_ivoc = dict([(idx,term) for term, idx in t_voc.items()])
     print("|V_S| = %d\n|V_T| = %d" % (len(s_voc), len(t_voc)))
     print("  |V| = %d" % dim)
-    
+
+    # Load labeled and unlabeled data
     s_train = load(fname_s_train, s_voc, dim)
-    s_unlabeled = load(fname_s_unlabeled, s_voc, dim, maxlines = maxlines)
-    t_unlabeled = load(fname_t_unlabeled, t_voc, dim, maxlines = maxlines)
+    s_unlabeled = load(fname_s_unlabeled, s_voc, dim,
+                       maxlines=options.max_unlabeled)
+    t_unlabeled = load(fname_t_unlabeled, t_voc, dim,
+                       maxlines=options.max_unlabeled)
     print("    |s_train| = %d" % s_train.n)
     print("|s_unlabeled| = %d" % s_unlabeled.n)
     print("|t_unlabeled| = %d" % t_unlabeled.n)
 
-    
+    # Load dictionary
     translator = DictTranslator.load(fname_dict, s_ivoc, t_voc)
-    pivotselector = pivotselection.MISelector()
 
-    trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85, 10**6)
+    # 
+    pivotselector = pivotselection.MISelector()
+    trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85,
+                                           10**6)
     strategy = auxstrategy.HadoopTrainingStrategy()
-    
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
 				 t_unlabeled, pivotselector,
 				 translator, trainer,
 				 strategy)
     clscl_trainer.s_ivoc = s_ivoc
     clscl_trainer.t_ivoc = t_ivoc
-    model = clscl_trainer.train(450, 30, 100)
+    model = clscl_trainer.train(options.m, options.phi, options.k)
     
     model.s_voc = s_voc
     model.t_voc = t_voc
@@ -229,7 +286,15 @@ def train():
     f.close()
 
 def predict():
+    """Prediction script for CLSCL.
+
+    Usage: ./clscl_predict strain model ttest reg
+    """
     argv = sys.argv[1:]
+    if len(argv) != 4:
+        print "Error: wrong number of arguments. "
+        print "Usage: %s strain model ttest reg" % sys.argv[0]
+        sys.exit(-2)
 
     fname_s_train = argv[0]
     fname_model = argv[1]

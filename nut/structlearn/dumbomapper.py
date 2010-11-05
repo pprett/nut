@@ -1,4 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/python
+#
+# Author: Peter Prettenhofer <peter.prettenhofer@gmail.com>
+#
+# License: BSD Style
+
 """A mapper for hadoop task parallelism. 
 
 To test the mapper locally use:

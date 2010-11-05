@@ -1,0 +1,13 @@
+*.pyc
+*.so
+*~
+.#*
+*.swp
+*.pkl
+build
+
+dist/
+doc/_build/
+doc/modules/generated/
+.coverage
+tags
