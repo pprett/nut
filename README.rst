@@ -32,6 +32,16 @@ To install nut on your system, use
 Documentation
 -------------
 
+CLSCL
+~~~~~
+
+An implementation of Cross-Language Structural Correspondence Learning (CLSCL) 
+for cross-language text classification. See [Prettenhofer and Stein, 2009] for 
+a detailed description. 
+
+The data for cross-language sentiment classification that has been used in the above
+study can be found here [2]. 
+
 clscl_train
 ???????????
 
@@ -76,4 +86,9 @@ Usage::
 References
 ----------
 
--
+[1] http://pprett.github.com/bolt/
+[2] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
+
+[Prettenhofer, P. and Stein, B., 2010] Cross-Language Text Classification using Structural Correspondence Learning. In Proceedings of ACL '10.
+
+
