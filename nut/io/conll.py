@@ -3,7 +3,6 @@
 # Author: Peter Prettenhofer <peter.prettenhofer@gmail.com>
 #
 # License: BSD Style
-
 """
 conll
 =====
