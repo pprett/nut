@@ -8,7 +8,6 @@ tagger
 TODO docs
 """
 
-
 import numpy as np
 import cPickle as pickle
 import bolt
@@ -42,12 +41,37 @@ def build_vocabulary(reader, fd, hd, minc=1):
             history = hd(pre_tags, untagged_sent, index, length)
             features.extend(history)
             features = ("%s=%s" % (ftype, fval)
-                        for ftype, fval in features.iteritems() if fval)
+                        for ftype, fval in features if fval)
             for fx in features:
                 vocabulary[fx] += 1
     vocabulary = [fx for fx, c in vocabulary.items() if c >= minc]
     tags = [t for t in tags]
     return vocabulary, tags
+
+
+def fs_to_instance(features, fidx_map):
+    """Convert a list of features to the corresponding
+    feature vector.
+
+    Arguments
+    ---------
+    features : list of (ftype, fval) tuples.
+    fidx_map : dict
+        A dict mapping features to feature ids.
+
+    Returns
+    -------
+    array, dtype = bolt.io.sparsedtype
+        The feature vector.
+
+    """
+    instance = []
+    features = ("%s=%s" % (ftype, fval)
+                for ftype, fval in features if fval)
+    for fx in features:
+        if fx in fidx_map:
+            instance.append((fidx_map[fx], 1.0))
+    return bolt.fromlist(instance, bolt.sparsedtype)
 
 
 @timeit
@@ -66,16 +90,14 @@ def build_examples(reader, fd, hd, V, T):
             history = hd(pre_tags, untagged_sent,
                          index, length)
             features.extend(history)
-            instance = []
-            features = ("%s=%s" % (ftype, fval)
-                        for ftype, fval in features.iteritems() if fval)
-            for fx in features:
-                if fx in fidx_map:
-                    instance.append((fidx_map[fx], 1.0))
-            instance = bolt.fromlist(instance, bolt.sparsedtype)
-            instances.append(instance)
+            instance = fs_to_instance(features, fidx_map)
             tag = sent[index][1]
-            labels.append(tidx_map[tag])
+            if tag == "Unk":
+                tag = -1
+            else:
+                tag = tidx_map[tag]
+            instances.append(instance)
+            labels.append(tag)
     instances = bolt.fromlist(instances, np.object)
     labels = bolt.fromlist(labels, np.float64)
     return bolt.io.MemoryDataset(len(V), instances, labels)
@@ -83,11 +105,11 @@ def build_examples(reader, fd, hd, V, T):
 
 class Tagger(object):
     """Tagger base class."""
-    def __init__(self, fd, hd, train_reader, verbose=0):
+    def __init__(self, fd, hd, verbose=0):
         self.fd = fd
         self.hd = hd
-        self.train_reader = train_reader
-
+        self.verbose = verbose
+        
     def tag(self, sent):
         """tag a sentence.
         :returns: a sequence of tags
@@ -112,24 +134,33 @@ class GreedyTagger(Tagger):
         super(GreedyTagger, self).__init__(*args, **kargs)
 
     @timeit
-    def train(self, reg=0.0001, epochs=30, minc=1, shuffle=False, verbose=1):
-        V, T = build_vocabulary(self.train_reader, self.fd, self.hd, minc=minc)
+    def feature_extraction(self, train_reader, minc=1):
+        print "------------------------------"
+        print "Feature extraction".center(30)
+        print "min count: ", minc
+        V, T = build_vocabulary(train_reader, self.fd, self.hd, minc=minc)
         self.V, self.T = V, T
         self.fidx_map = dict([(fname, i) for i, fname in enumerate(V)])
         self.tidx_map = dict([(tag, i) for i, tag in enumerate(T)])
         self.tag_map = dict([(i, t) for i, t in enumerate(T)])
-        dataset = build_examples(self.train_reader, self.fd, self.hd, V, T)
+        dataset = build_examples(train_reader, self.fd, self.hd, V, T)
         dataset.shuffle(13)
+        self.dataset = dataset
+
+    @timeit
+    def train(self, reg=0.0001, epochs=30, shuffle=False):
+        dataset = self.dataset
+        T = self.T
         print "------------------------------"
         print "Training".center(30)
-        print "num examples: ", dataset.n
-        print "num features: ", dataset.dim
-        print "num classes: ", len(T)
+        print "num examples: %d" % dataset.n
+        print "num features: %d" % dataset.dim
+        print "num classes: %d" % len(T)
         print "classes: ", T
-        print "reg: ", reg
-        print "epochs: ", epochs
+        print "reg: %.8f" % reg
+        print "epochs: %d" % epochs
         glm = bolt.GeneralizedLinearModel(dataset.dim, len(T), biasterm=True)
-        self._train(glm, dataset, epochs=epochs, reg=reg, verbose=verbose,
+        self._train(glm, dataset, epochs=epochs, reg=reg, verbose=self.verbose,
                     shuffle=shuffle)
         self.glm = glm
 
@@ -137,7 +168,7 @@ class GreedyTagger(Tagger):
         raise NotImplementedError
 
     def save(self, fname):
-        f = open(fname, "w+")
+        f = open(fname, "wb+")
         pickle.dump(self.glm, f)
         pickle.dump(self.V, f)
         pickle.dump(self.fidx_map, f)
@@ -146,7 +177,7 @@ class GreedyTagger(Tagger):
         f.close()
 
     def load(self, fname):
-        f = open(fname, "r")
+        f = open(fname, "rb")
         self.glm = pickle.load(f)
         self.V = pickle.load(f)
         self.fidx_map = pickle.load(f)
@@ -162,14 +193,8 @@ class GreedyTagger(Tagger):
             features = self.fd(untagged_sent, index, length)
             history = self.hd(tag_seq, untagged_sent, index, length)
             features.extend(history)
-            instance = []
-            for (fname, fval) in features:
-                fx = "%s(%s)" % (fname, str(fval))
-                if fx in self.fidx_map:
-                    instance.append((self.fidx_map[fx], 1))
-            instance = sorted(instance)
-            x = bolt.fromlist(instance, bolt.sparsedtype)
-            p = self.glm(x)
+            instance = fs_to_instance(features, self.fidx_map)
+            p = self.glm(instance)
             tag_seq.append(self.tag_map[p])
             yield tag_seq[-1]
 
@@ -179,7 +204,6 @@ class GreedyTagger(Tagger):
         for i, w in enumerate(self.glm.W):
             idxs = w.argsort()
             maxidx = idxs[::-1][:k]
-            #minidx = idxs[:k]
             print self.T[i], ": "
             print ", ".join(["<%s,%.4f>" % (self.V[idx], w[idx])
                              for idx in maxidx])
@@ -193,7 +217,7 @@ class AvgPerceptronTagger(GreedyTagger):
         epochs = kargs["epochs"]
         trainer = bolt.trainer.avgperceptron.AveragedPerceptron(epochs=epochs)
         trainer.train(glm, dataset, shuffle=kargs["shuffle"],
-                      verbose=kargs["verbose"])
+                      verbose=self.verbose)
 
 
 class GreedySVMTagger(GreedyTagger):
@@ -205,4 +229,4 @@ class GreedySVMTagger(GreedyTagger):
                        epochs=kargs["epochs"])
         trainer = bolt.OVA(sgd)
         trainer.train(glm, dataset, shuffle=kargs["shuffle"],
-                      verbose=kargs["verbose"], ncpus=4)
+                      verbose=self.verbose, ncpus=4)

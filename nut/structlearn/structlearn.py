@@ -68,7 +68,8 @@ class StructLearner(object):
 		    for task_id in fid_task_map[fid]:
 			iidx[task_id].append(i)
 
-	iidx = dict((task_id, np.unique(np.array(occurances))) for task_id, occurances in iidx.iteritems())
+	iidx = dict((task_id, np.unique(np.array(occurances))) for task_id,
+                    occurances in iidx.iteritems())
 	self.inverted_index = iidx
 	
     @timeit
@@ -78,7 +79,7 @@ class StructLearner(object):
 	"""
 	W = self.training_strategy.train_aux_classifiers(self.ds, self.auxtasks,
 							 self.classifier_trainer,
-							 inverted_index = self.inverted_index)
+							 inverted_index=self.inverted_index)
 	density = W.nnz / float(W.shape[0]*W.shape[1])
 	print "density: %.4f" % density
 	Ut, s, Vt = sparsesvd.sparsesvd(W, self.k)
