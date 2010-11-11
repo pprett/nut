@@ -45,6 +45,7 @@ def build_vocabulary(reader, fd, hd, minc=1):
             for fx in features:
                 vocabulary[fx] += 1
     vocabulary = [fx for fx, c in vocabulary.items() if c >= minc]
+    vocabulary = sorted(vocabulary)
     tags = [t for t in tags]
     return vocabulary, tags
 

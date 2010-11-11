@@ -25,7 +25,7 @@ class PivotSelector(object):
     __meta__ = ABCMeta
 
     @abstractmethod
-    def select(self, ds, preselection = None):
+    def select(self, ds, preselection=None):
 	return 0
 
 class FreqSelector(PivotSelector):
@@ -34,7 +34,7 @@ class FreqSelector(PivotSelector):
     def __init__(self, support):
 	self.support = support
 
-    def select(self, ds, preselection = None):
+    def select(self, ds, preselection=None):
 	counts = util.count(ds)
 	gen = (idx for idx in counts.argsort()[::-1] if counts[idx] >= self.support)
 	if preselection != None:

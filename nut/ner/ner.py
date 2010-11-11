@@ -7,9 +7,12 @@
 import sys
 import re
 import optparse
+import numpy as np
 
+from itertools import islice
 from ..io import conll
 from ..tagger import tagger
+from ..structlearn.pivotselection import FreqSelector
 
 __version__ = "0.1"
 
@@ -156,13 +159,14 @@ class ASO(object):
     def __init__(self, model, reader):
         self.reader = reader
         self.fidx_map = model.fidx_map
+        self.vocabulary = model.V
         self.ds = tagger.build_examples(reader, model.fd, model.hd,
                                         model.V, model.T)
 
-    def instances_by_pos_prefix(prefix):
+    def instances_by_pos_prefix(self, prefix):
         indices = []
         i = 0
-        for sent in reader:
+        for sent in self.reader:
             for token in sent:
                 if token[POS].startswith(prefix):
                     indices.append(i)
@@ -178,6 +182,35 @@ class ASO(object):
         ds.labels = ds.labels[indices]
         ds.n = ds.labels.shape[0]
         self.ds = ds
+
+    def preselect_tasks(self):
+        preselection = set()
+        for fx in self.fidx_map:
+            if fx.startswith("w=") or fx.startswith("pre_w=") \
+               or fx.startswith("post_w="):
+                preselection.add(self.fidx_map[fx])
+        return preselection
+
+    def create_aux_tasks(self, m):
+        preselection = self.preselect_tasks()
+        aux_tasks = list(islice(
+            FreqSelector(0).select(self.ds, preselection), m))
+        return aux_tasks
+
+    def print_tasks(self, tasks):
+        for task in tasks:
+            print self.vocabulary[task]
+
+    def learn(self):
+        print "run ASO.learn..."
+        self.filter_noun_adjectives()
+        aux_tasks = self.create_aux_tasks(1000)
+        self.print_tasks(aux_tasks)
+##      ds.shuffle(9)
+	## struct_learner = structlearn.StructLearner(k, ds, pivots,
+## 						   self.trainer,
+## 						   self.strategy)
+## 	struct_learner.learn()
 
 
 def train_args_parser():
@@ -256,6 +289,9 @@ def train():
     options, argv = parser.parse_args()
     if len(argv) != 2:
         parser.error("incorrect number of arguments (use `--help` for help).")
+    if options.aso:
+        if not options.funlabeled:
+            raise parser.error("specify unlabeled data with --unlabeled. ")
     f_train = argv[0]
     f_model = argv[1]
     train_reader = conll.Conll03Reader(f_train, options.lang)
@@ -264,7 +300,9 @@ def train():
     model.feature_extraction(train_reader, options.minc)
     if options.aso:
         unlabeled_reader = conll.Conll03Reader(options.funlabeled, options.lang)
-        aso = ASO()
+        aso = ASO(model, unlabeled_reader)
+        aso.learn()
+        sys.exit()
     model.train(reg=options.reg, epochs=options.epochs, shuffle=options.shuffle)
     model.save(f_model)
     if options.stats:
