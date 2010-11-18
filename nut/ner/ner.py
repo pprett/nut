@@ -10,6 +10,7 @@ import optparse
 import numpy as np
 
 from itertools import islice
+from collections import defaultdict
 from ..io import conll
 from ..tagger import tagger
 from ..structlearn.pivotselection import FreqSelector
@@ -65,35 +66,30 @@ def fd(sent, index, length):
     isupper = w.isupper()
     isalnum = w.isalnum()
     hyphen  = "-" in w
-    num_w = numify(w)
 
     pre_istitle = pre_w.istitle()
     pre_isdigit = pre_w.isdigit()
     pre_isupper = pre_w.isupper()
     pre_hyphen  = "-" in pre_w
     pre_isalnum = pre_w.isalnum()
-    num_pre_w = numify(pre_w)
 
     pre_pre_istitle = pre_pre_w.istitle()
     pre_pre_isdigit = pre_pre_w.isdigit()
     pre_pre_isupper = pre_pre_w.isupper()
     pre_pre_hyphen  = "-" in pre_pre_w
     pre_pre_isalnum = pre_pre_w.isalnum()
-    num_pre_pre_w = numify(pre_pre_w)
 
     post_istitle = post_w.istitle()
     post_isdigit = post_w.isdigit()
     post_isupper = post_w.isupper()
     post_hypen   = "-" in post_w
     post_isalnum = post_w.isalnum()
-    num_post_w = numify(post_w)
 
     post_post_istitle = post_post_w.istitle()
     post_post_isdigit = post_post_w.isdigit()
     post_post_isupper = post_post_w.isupper()
     post_post_hypen   = "-" in post_post_w
     post_post_isalnum = post_post_w.isalnum()
-    num_post_post_w = numify(post_post_w)
     
     ## 2-4 suffixes in a 1 token window
     w_suffix1 = w[-1:]
@@ -137,23 +133,35 @@ def fd(sent, index, length):
     return features
 
 
-def hd(tags, sent, index, length):
+def hd(tags, sent, index, length, occurrences = defaultdict(set)):
     context = lambda idx, field: sent[index + idx][field] \
               if index+idx >= 0 and index + idx < length \
               else "<s>" if index+idx < 0 \
               else "</s>"
 
-    pre_tag = tags[index - 1] if index - 1 >= 0 else "<s>"
-    pre_tag_w = "/".join([pre_tag, context(0, WORD)])
+    #pre_tag = tags[index - 1] if index - 1 >= 0 else "<s>"
+    w = context(0, WORD)
+    pre_tag_w = "/".join([pre_tag, w])
     tag_bigram = "/".join([tags[index - 2] if index - 2 >= 0 else "<s>",
                            pre_tag])
+    
     history = locals()
+    del history["w"]
     del history["context"]
     del history["tags"]
     del history["sent"]
     del history["index"]
     del history["length"]
-    return history.items()
+    
+    previous_w_labels = []
+    for tag, previous_assignments in occurrences.iteritems():
+        if w in previous_assignments:
+            previous_w_labels.append(("prev_assigned", tag))
+
+    history = history.items()
+    history.extend(previous_w_labels)
+    
+    return history
 
 class ASO(object):
     def __init__(self, model, reader):

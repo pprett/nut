@@ -24,11 +24,16 @@ def build_vocabulary(reader, fd, hd, minc=1):
 
     Returns
     -------
-    tuple, (vocabulary, tags)
-       The vocabulary is the set of features; tags is the tag vocabulary.
+    vocabulary : list
+        A sorted list of feature names. 
+    tags : list
+        The list of tags.
+    occurrences : dict
+        A dictionary of tags assigned to words (keys are tags, values are sets of words). 
     """
     tags = set()
     vocabulary = defaultdict(int)
+    occurrences = defaultdict(set)
     for sent in reader.sents():
         untagged_sent = [token for (token, tag) in sent]
         tag_seq = [tag for (token, tag) in sent]
@@ -36,6 +41,8 @@ def build_vocabulary(reader, fd, hd, minc=1):
             tags.add(tag)
         length = len(untagged_sent)
         for index in range(len(untagged_sent)):
+            # add current word to tag occurrances
+            occurrences[tag_seq[index]].add(untagged_sent[index][0])
             features = fd(untagged_sent, index, length)
             pre_tags = tag_seq[:index]
             history = hd(pre_tags, untagged_sent, index, length)
@@ -47,7 +54,7 @@ def build_vocabulary(reader, fd, hd, minc=1):
     vocabulary = [fx for fx, c in vocabulary.items() if c >= minc]
     vocabulary = sorted(vocabulary)
     tags = [t for t in tags]
-    return vocabulary, tags
+    return vocabulary, tags, occurrences
 
 
 def fs_to_instance(features, fidx_map):
@@ -76,7 +83,7 @@ def fs_to_instance(features, fidx_map):
 
 
 @timeit
-def build_examples(reader, fd, hd, V, T):
+def build_examples(reader, fd, hd, V, T, occurrences={}):
     fidx_map = dict([(fname, i) for i, fname in enumerate(V)])
     tidx_map = dict([(tag, i) for i, tag in enumerate(T)])
     instances = []
@@ -89,7 +96,7 @@ def build_examples(reader, fd, hd, V, T):
             features = fd(untagged_sent, index, length)
             pre_tags = tag_seq[:index]
             history = hd(pre_tags, untagged_sent,
-                         index, length)
+                         index, length, occurrences)
             features.extend(history)
             instance = fs_to_instance(features, fidx_map)
             tag = sent[index][1]
@@ -110,7 +117,7 @@ class Tagger(object):
         self.fd = fd
         self.hd = hd
         self.verbose = verbose
-        
+
     def tag(self, sent):
         """tag a sentence.
         :returns: a sequence of tags
@@ -139,12 +146,13 @@ class GreedyTagger(Tagger):
         print "------------------------------"
         print "Feature extraction".center(30)
         print "min count: ", minc
-        V, T = build_vocabulary(train_reader, self.fd, self.hd, minc=minc)
+        V, T, occurrences = build_vocabulary(train_reader, self.fd, self.hd, minc=minc)
         self.V, self.T = V, T
+        self.occurrences = occurrences
         self.fidx_map = dict([(fname, i) for i, fname in enumerate(V)])
         self.tidx_map = dict([(tag, i) for i, tag in enumerate(T)])
         self.tag_map = dict([(i, t) for i, t in enumerate(T)])
-        dataset = build_examples(train_reader, self.fd, self.hd, V, T)
+        dataset = build_examples(train_reader, self.fd, self.hd, V, T, occurrences=occurrences)
         dataset.shuffle(13)
         self.dataset = dataset
 
