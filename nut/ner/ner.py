@@ -8,6 +8,7 @@ import sys
 import re
 import optparse
 import numpy as np
+import cPickle as pickle
 
 from itertools import islice
 from collections import defaultdict
@@ -47,10 +48,10 @@ def fd(sent, index, length):
     post_w = context(1, WORD)
     post_post_w = context(2, WORD)
 
-    bigram = "/".join([pre_w, w])
-    pre_bigram = "/".join([pre_pre_w, pre_w])
+    ## token bigrams in a 3 token window
+    pre_bigram = "/".join([pre_w, w])
     post_bigram = "/".join([w, post_w])
-    post_post_bigram = "/".join([post_w, post_post_w])
+    
 
     ## pos in a 5 token window
     pos = context(0, POS)
@@ -58,40 +59,55 @@ def fd(sent, index, length):
     post_pos = context(1, POS)
     pre_pre_pos = context(-2, POS)
     post_post_pos = context(2, POS)
-    post_post_pos = context(2, POS)
 
-    ## Word shape features
+    pre_pos_bigram = "/".join([pre_pos, pos])
+    post_pos_bigram = "/".join([pos, post_pos])
+
+    pos_w = "/".join([w, pos])
+    
+
+    ## Word shape features (5 token window)
     istitle = w.istitle()
     isdigit = w.isdigit()
     isupper = w.isupper()
     isalnum = w.isalnum()
-    hyphen  = "-" in w
+    hyphen = "-" in w
+    #is2digit = isdigit and len(w)==2
+    #is4digit = isdigit and len(w)==4
 
     pre_istitle = pre_w.istitle()
     pre_isdigit = pre_w.isdigit()
     pre_isupper = pre_w.isupper()
-    pre_hyphen  = "-" in pre_w
+    pre_hyphen = "-" in pre_w
     pre_isalnum = pre_w.isalnum()
+    #pre_is2digit = pre_isdigit and len(pre_w)==2
+    #pre_is4digit = pre_isdigit and len(pre_w)==4
 
     pre_pre_istitle = pre_pre_w.istitle()
     pre_pre_isdigit = pre_pre_w.isdigit()
     pre_pre_isupper = pre_pre_w.isupper()
-    pre_pre_hyphen  = "-" in pre_pre_w
+    pre_pre_hyphen = "-" in pre_pre_w
     pre_pre_isalnum = pre_pre_w.isalnum()
+    #pre_pre_is2digit = pre_pre_isdigit and len(pre_pre_w)==2
+    #pre_pre_is4digit = pre_pre_isdigit and len(pre_pre_w)==4
 
     post_istitle = post_w.istitle()
     post_isdigit = post_w.isdigit()
     post_isupper = post_w.isupper()
-    post_hypen   = "-" in post_w
+    post_hypen = "-" in post_w
     post_isalnum = post_w.isalnum()
+    #post_is2digit = post_isdigit and len(post_w)==2
+    #post_is4digit = post_isdigit and len(post_w)==4
 
     post_post_istitle = post_post_w.istitle()
     post_post_isdigit = post_post_w.isdigit()
     post_post_isupper = post_post_w.isupper()
-    post_post_hypen   = "-" in post_post_w
+    post_post_hypen = "-" in post_post_w
     post_post_isalnum = post_post_w.isalnum()
-    
-    ## 2-4 suffixes in a 1 token window
+    #post_post_is2digit = post_post_isdigit and len(post_post_w)==2
+    #post_post_is4digit = post_post_isdigit and len(post_post_w)==4
+
+    ## 2-4 suffixes in a 3 token window
     w_suffix1 = w[-1:]
     w_suffix2 = w[-2:]
     w_suffix3 = w[-3:]
@@ -107,19 +123,19 @@ def fd(sent, index, length):
     post_w_suffix3 = post_w[-3:]
     post_w_suffix4 = post_w[-4:]
 
-    ## 2-4 prefixes in a 1 token window
+    ## 3-4 prefixes in a 3 token window
     w_prefix3 = w[:3]
     w_prefix4 = w[:4]
- 
+
     pre_w_prefix3 = pre_w[:3]
     pre_w_prefix4 = pre_w[:4]
 
     post_w_prefix3 = post_w[:3]
     post_w_prefix4 = post_w[:4]
 
-    ## Noun phrase
+    ## Noun phrase in a 3 token window
     np = context(0,NP)
-    np_w = "/".join([np,w])
+    np_w = "/".join([np, w])
     pre_np = context(-1, NP)
     post_np = context(1, NP)
 
@@ -133,34 +149,24 @@ def fd(sent, index, length):
     return features
 
 
-def hd(tags, sent, index, length, occurrences = defaultdict(set)):
+def hd(tags, sent, index, length, occurrences={}):
     context = lambda idx, field: sent[index + idx][field] \
               if index+idx >= 0 and index + idx < length \
               else "<s>" if index+idx < 0 \
               else "</s>"
 
-    #pre_tag = tags[index - 1] if index - 1 >= 0 else "<s>"
-    w = context(0, WORD)
-    pre_tag_w = "/".join([pre_tag, w])
-    tag_bigram = "/".join([tags[index - 2] if index - 2 >= 0 else "<s>",
-                           pre_tag])
+    pre_tag = tags[index - 1] if index - 1 >= 0 else "<s>"
+    pre_pre_tag = tags[index - 2] if index - 2 >= 0 else "<s>"
+    pre_tag_w = "/".join([pre_tag, context(0, WORD)])
+    tag_bigram = "/".join([pre_pre_tag, pre_tag])
     
-    history = locals()
-    del history["w"]
-    del history["context"]
-    del history["tags"]
-    del history["sent"]
-    del history["index"]
-    del history["length"]
-    
-    previous_w_labels = []
-    for tag, previous_assignments in occurrences.iteritems():
-        if w in previous_assignments:
-            previous_w_labels.append(("prev_assigned", tag))
-
-    history = history.items()
-    history.extend(previous_w_labels)
-    
+    history = [("pre_tag", pre_tag), ("pre_pre_tag", pre_pre_tag),
+               ("pre_tag_w", pre_tag_w), ("tag_bigram", tag_bigram)]
+    #w = context(0, WORD)
+    #if w in occurrences:
+    #    history.extend([("prev_assigned", tag) for tag in occurrences[w]])
+    #if w == "EU":
+    #    print history
     return history
 
 class ASO(object):
@@ -215,15 +221,15 @@ class ASO(object):
         aux_tasks = self.create_aux_tasks(1000)
         self.print_tasks(aux_tasks)
 ##      ds.shuffle(9)
-	## struct_learner = structlearn.StructLearner(k, ds, pivots,
-## 						   self.trainer,
-## 						   self.strategy)
-## 	struct_learner.learn()
+        ## struct_learner = structlearn.StructLearner(k, ds, pivots,
+##                                                 self.trainer,
+##                                                 self.strategy)
+##      struct_learner.learn()
 
 
 def train_args_parser():
     """Create argument and option parser for the
-    training script. 
+    training script.
     """
     description = """    """
     parser = optparse.OptionParser(usage="%prog [options] " \
@@ -312,11 +318,25 @@ def train():
         aso.learn()
         sys.exit()
     model.train(reg=options.reg, epochs=options.epochs, shuffle=options.shuffle)
-    model.save(f_model)
     if options.stats:
         print "------------------------------"
         print " Stats\n"
         model.describe(k=40)
+        nnz = 0
+        for instance in model.dataset.iterinstances():
+            nnz += instance.shape[0]
+        print "avg. nnz: %.4f" % (float(nnz) / model.dataset.n)
+    if f_model.endswith(".gz"):
+        import gzip
+        f = gzip.open(f_model, mode="wb")
+    elif f_model.endswith(".bz2"):
+        import bz2
+        f = bz2.BZ2File(f_model, mode="w")
+    else:
+        f = open(f_model)
+    del model.dataset
+    pickle.dump(model, f)
+    f.close()
 
 
 def predict():
@@ -349,11 +369,20 @@ def predict():
         print "Error: wrong number of arguments. "
         usage()
         sys.exit(-2)
-    
-    model = tagger.GreedySVMTagger(fd, hd)
+
     print >> sys.stderr, "loading tagger...",
     sys.stderr.flush()
-    model.load(argv[0])
+    f_model = argv[0]
+    if f_model.endswith(".gz"):
+        import gzip
+        f = gzip.open(f_model, mode="rb")
+    elif f_model.endswith(".bz2"):
+        import bz2
+        f = bz2.BZ2File(f_model, mode="r")
+    else:
+        f = open(f_model)
+    model = pickle.load(f)
+    f.close()
     print >> sys.stderr, "[done]"
     test_reader = conll.Conll03Reader(argv[1], lang)
     if argv[2] != "-":
