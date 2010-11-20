@@ -9,29 +9,16 @@ TODO docs
 """
 
 import numpy as np
-import cPickle as pickle
 import bolt
 
 from collections import defaultdict
+from itertools import chain
 from ..util import timeit
+from ..ner.nonlocal import ExtendedPredictionHistory
+
 
 @timeit
-def build_occurrences(reader):
-    """Occurrences seam to hurt more than they do good..
-    """
-    occurrences = defaultdict(set)
-    for sent in reader.sents():
-        length = len(sent)
-        for index in range(length):
-            # add current word to tag occurrences
-            w = sent[index][0][0]
-            tag = sent[index][1]
-            if tag != "O":  # FIXME add and tag != "Unk":
-                occurrences[w].add(tag)
-    return occurrences
-
-@timeit
-def build_vocabulary(reader, fd, hd, minc=1, occurrences={}):
+def build_vocabulary(reader, fd, hd, minc=1, use_eph=False):
     """
     Arguments
     ---------
@@ -54,25 +41,44 @@ def build_vocabulary(reader, fd, hd, minc=1, occurrences={}):
         for index in range(length):
             features = fd(untagged_sent, index, length)
             pre_tags = tag_seq[:index]
-            history = hd(pre_tags, untagged_sent, index, length, occurrences)
+            history = hd(pre_tags, untagged_sent, index, length)
             features.extend(history)
             features = ("%s=%s" % (ftype, fval)
                         for ftype, fval in features if fval)
             for fx in features:
                 vocabulary[fx] += 1
-    vocabulary = [fx for fx, c in vocabulary.items() if c >= minc]
+    vocabulary = [fx for fx, c in vocabulary.iteritems() if c > minc]
+    # If extended prediction history is used add |tags| features.
+    if use_eph:
+        for t in tags:
+            vocabulary.append("eph=%s" % t)
     vocabulary = sorted(vocabulary)
     tags = [t for t in tags]
     return vocabulary, tags
 
 
-def fs_to_instance(features, fidx_map):
-    """Convert a list of features to the corresponding
+def encode_numeric(features):
+    """Encodes numeric features."""
+    for ftype, fval, fnum in features:
+        if fnum != 0.0:
+            yield ("%s=%s" % (ftype, fval), fnum)
+
+
+def encode_indicator(features):
+    """Encodes indicator (=binary) features."""
+    for ftype, fval in features:
+        if fval:
+            yield ("%s=%s" % (ftype, fval), 1.0)
+
+
+def asinstance(enc_features, fidx_map):
+    """Convert a list of encoded features
+    to the corresponding
     feature vector.
 
     Arguments
     ---------
-    features : list of (ftype, fval) tuples.
+    enc_features : list of encoded features
     fidx_map : dict
         A dict mapping features to feature ids.
 
@@ -83,20 +89,19 @@ def fs_to_instance(features, fidx_map):
 
     """
     instance = []
-    features = ("%s=%s" % (ftype, fval)
-                for ftype, fval in features if fval)
-    for fx in features:
-        if fx in fidx_map:
-            instance.append((fidx_map[fx], 1.0))
+    for fid, fval in enc_features:
+        if fid in fidx_map:
+            instance.append((fidx_map[fid], fval))
     return bolt.fromlist(instance, bolt.sparsedtype)
 
 
 @timeit
-def build_examples(reader, fd, hd, V, T, occurrences={}):
-    fidx_map = dict([(fname, i) for i, fname in enumerate(V)])
+def build_examples(reader, fd, hd, fidx_map, T, use_eph=False):
     tidx_map = dict([(tag, i) for i, tag in enumerate(T)])
     instances = []
     labels = []
+    if use_eph:
+        eph = ExtendedPredictionHistory(tidx_map)
     i = 0
     for sent in reader.sents():
         untagged_sent, tag_seq = zip(*sent)
@@ -104,11 +109,21 @@ def build_examples(reader, fd, hd, V, T, occurrences={}):
         for index in range(length):
             features = fd(untagged_sent, index, length)
             pre_tags = tag_seq[:index]
-            history = hd(pre_tags, untagged_sent,
-                         index, length, occurrences)
-            features.extend(history)
-            instance = fs_to_instance(features, fidx_map)
             tag = tag_seq[index]
+            history = hd(pre_tags, untagged_sent,
+                         index, length)
+            features.extend(history)
+            enc_features = encode_indicator(features)
+            if use_eph:
+                w = untagged_sent[index][0]
+                if w in eph:
+                    dist = eph[w]
+                    dist = [("eph", T[i], v) for i, v in enumerate(dist)]
+                    enc_features = chain(enc_features, encode_numeric(dist))
+                if tag != "O":
+                    eph.push(w, tag)
+
+            instance = asinstance(enc_features, fidx_map)
             if tag == "Unk":
                 tag = -1
             else:
@@ -117,7 +132,7 @@ def build_examples(reader, fd, hd, V, T, occurrences={}):
             labels.append(tag)
     instances = bolt.fromlist(instances, np.object)
     labels = bolt.fromlist(labels, np.float64)
-    return bolt.io.MemoryDataset(len(V), instances, labels)
+    return bolt.io.MemoryDataset(len(fidx_map), instances, labels)
 
 
 class Tagger(object):
@@ -151,33 +166,31 @@ class GreedyTagger(Tagger):
         super(GreedyTagger, self).__init__(*args, **kargs)
 
     @timeit
-    def feature_extraction(self, train_reader, minc=1):
+    def feature_extraction(self, train_reader, minc=1, use_eph=False):
+        """Extracts the features from the given training reader.
+        Builds up various data structures such as the vocabulary and
+        the tag set. Furthermore, it creates a training set from the
+        given training reader.
+        """
         print "------------------------------"
         print "Feature extraction".center(30)
         print "min count: ", minc
-        #occurrences = build_occurrences(train_reader)
-        #self.occurrences = occurrences
-        #self.print_occurrences()
-        V, T = build_vocabulary(train_reader, self.fd, self.hd, minc=minc)
-                                #occurrences=occurrences)
+        print "use eph: ", use_eph
+        self.minc = minc
+        self.use_eph = use_eph
+        V, T = build_vocabulary(train_reader, self.fd, self.hd, minc=minc,
+                                use_eph=self.use_eph)
         self.V, self.T = V, T
-        
         self.fidx_map = dict([(fname, i) for i, fname in enumerate(V)])
         self.tidx_map = dict([(tag, i) for i, tag in enumerate(T)])
         self.tag_map = dict([(i, t) for i, t in enumerate(T)])
         print "building examples..."
-        dataset = build_examples(train_reader, self.fd, self.hd, V, T)
-                                 #occurrences=occurrences)
+        dataset = build_examples(train_reader, self.fd, self.hd,
+                                 self.fidx_map, T, use_eph=self.use_eph)
         dataset.shuffle(13)
         self.dataset = dataset
-
-    def print_occurrences(self):
-        print "Occurrences"
-        print "-----------"
-        print "Num words with prev. taggings: %d" % len(self.occurrences)
-        print "EU :", self.occurrences["EU"]
-        print "and :", self.occurrences["and"]
-        print
+        if use_eph:
+            self.eph = ExtendedPredictionHistory(self.tidx_map)
 
     @timeit
     def train(self, reg=0.0001, epochs=30, shuffle=False):
@@ -199,45 +212,27 @@ class GreedyTagger(Tagger):
     def _train(self, glm, dataset, **kargs):
         raise NotImplementedError
 
-    def save(self, fname):
-        f = open(fname, "wb+")
-        pickle.dump(self.glm, f)
-        pickle.dump(self.V, f)
-        pickle.dump(self.fidx_map, f)
-        pickle.dump(self.tidx_map, f)
-        pickle.dump(self.tag_map, f)
-        f.close()
-
-    def load(self, fname):
-        f = open(fname, "rb")
-        self.glm = pickle.load(f)
-        self.V = pickle.load(f)
-        self.fidx_map = pickle.load(f)
-        self.tidx_map = pickle.load(f)
-        self.tag_map = pickle.load(f)
-        f.close()
-
     def tag(self, sent):
         untagged_sent = [token for (token, tag) in sent]
         length = len(untagged_sent)
         tag_seq = []
-        #occurrences = self.occurrences
         for index in range(length):
+            w = untagged_sent[index][0]
             features = self.fd(untagged_sent, index, length)
             history = self.hd(tag_seq, untagged_sent, index, length)
-                              # occurrences)
             features.extend(history)
-            instance = fs_to_instance(features, self.fidx_map)
+            enc_features = encode_indicator(features)
+            if self.use_eph:
+                if w in self.eph:
+                    dist = self.eph[w]
+                    dist = [("eph", self.T[i], v) for i, v in enumerate(dist)]
+                    enc_features = chain(enc_features, encode_numeric(dist))
+            instance = asinstance(enc_features, self.fidx_map)
             p = self.glm(instance)
             tag = self.tag_map[p]
             tag_seq.append(tag)
-            # Add assigned tag to occurrences
-            w = untagged_sent[index][0]
-            #if tag != "O":
-                #if w in occurrences:
-                #    if tag not in occurrences[w]:
-                #        print "adding %s to occurrences of %s" % (w, tag)
-            #occurrences[w].add(tag)
+            if self.use_eph and tag != "O":
+                self.eph.push(w, tag)
             yield tag_seq[-1]
 
     def describe(self, k=20):

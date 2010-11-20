@@ -11,9 +11,6 @@ To install nut you need:
    * Bolt  (>= 1.4) [#f1]_
    * Sparsesvd (>= 0.1.4) [#f2]_
 
-.. [#f1] http://github.com/pprett/bolt
-.. [#f2] http://pypi.python.org/pypi/sparsesvd/0.1.4
-
 Installation
 ------------
 
@@ -40,12 +37,12 @@ for cross-language text classification. See [Prettenhofer and Stein, 2009] for
 a detailed description. 
 
 The data for cross-language sentiment classification that has been used in the above
-study can be found here [2]. 
+study can be found here [#f3]_.
 
 clscl_train
 ???????????
 
-Training script for CLSCL. See ./clscl --help for further details. 
+Training script for CLSCL. See ./clscl_train --help for further details. 
 
 Usage:: 
 
@@ -83,13 +80,27 @@ Usage::
 	project took 2.805 sec
 	ACC: 82.85
 
+Named-Entity Recognition
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+A simple greedy left-to-right sequence labeling approach to named-entity recognition (NER). 
+
+ner_train
+?????????
+
+Training script for NER. See ./ner_train --help for further details. 
+
+ner_predict
+???????????
+
+
 References
 ----------
 
-[1] http://pprett.github.com/bolt/
+.. [#f1] http://github.com/pprett/bolt
+.. [#f2] http://pypi.python.org/pypi/sparsesvd/0.1.4
+.. [#f3] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
 
-[2] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
-
-[Prettenhofer, P. and Stein, B., 2010] Cross-Language Text Classification using Structural Correspondence Learning. In Proceedings of ACL '10.
+[Prettenhofer, P. and Stein, B., 2010] `Cross-Language Text Classification using Structural Correspondence Learning <www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
 
 

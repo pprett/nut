@@ -22,17 +22,12 @@ WORD, POS, NP, LEMMA = 0, 1, 2, 3
 
 
 def numify(s):
-    """Abstract representation of digits.
-    """
     if sum((1 for c in s if not c.isdigit())) > 2:
         return s
     else:
         return "".join(["*d*" if c.isdigit() else c for c in s])
 
 
-## Extract features from the current context.
-# all local variables are used as binary features:
-# varname(varvalue) = 1
 def fd(sent, index, length):
     """Feature detector for CoNLL 2003.
     """
@@ -41,7 +36,7 @@ def fd(sent, index, length):
               else "<s>" if index+idx < 0 \
               else "</s>"
 
-    ## tokens in a 5 token window x_{i-2}..x_{i+2}
+    ## tokens in a 5 token window w_{i-2}..w_{i+2}
     w = context(0, WORD)
     pre_w = context(-1, WORD)
     pre_pre_w = context(-2, WORD)
@@ -51,7 +46,6 @@ def fd(sent, index, length):
     ## token bigrams in a 3 token window
     pre_bigram = "/".join([pre_w, w])
     post_bigram = "/".join([w, post_w])
-    
 
     ## pos in a 5 token window
     pos = context(0, POS)
@@ -64,7 +58,6 @@ def fd(sent, index, length):
     post_pos_bigram = "/".join([pos, post_pos])
 
     pos_w = "/".join([w, pos])
-    
 
     ## Word shape features (5 token window)
     istitle = w.istitle()
@@ -162,11 +155,138 @@ def hd(tags, sent, index, length, occurrences={}):
     
     history = [("pre_tag", pre_tag), ("pre_pre_tag", pre_pre_tag),
                ("pre_tag_w", pre_tag_w), ("tag_bigram", tag_bigram)]
-    #w = context(0, WORD)
-    #if w in occurrences:
-    #    history.extend([("prev_assigned", tag) for tag in occurrences[w]])
-    #if w == "EU":
-    #    print history
+    return history
+
+
+## Extract features from the current context.
+# all local variables are used as binary features:
+# varname(varvalue) = 1
+def old_fd(sent, index, length):
+    """Feature detector for CoNLL 2003 from RR06.
+    """
+    context = lambda idx, field: sent[index + idx][field] \
+              if index+idx >= 0 and index + idx < length \
+              else "<s>" if index+idx < 0 \
+              else "</s>"
+
+    ## tokens in a 5 token window x_{i-2}..x_{i+2}
+    w = numify(context(0, WORD))
+    pre_w = numify(context(-1, WORD))
+    pre_pre_w = numify(context(-2, WORD))
+    post_w = numify(context(1, WORD))
+    post_post_w = numify(context(2, WORD))
+
+    ## token bigrams in a 3 token window
+    pre_bigram = "/".join([pre_w, w])
+    post_bigram = "/".join([w, post_w])
+
+    ## pos in a 5 token window
+    pos = context(0, POS)
+    pre_pos = context(-1, POS)
+    post_pos = context(1, POS)
+    pre_pre_pos = context(-2, POS)
+    post_post_pos = context(2, POS)
+
+    pre_pos_bigram = "/".join([pre_pos, pos])
+    post_pos_bigram = "/".join([pos, post_pos])
+
+    pos_w = "/".join([w, pos])
+    
+    ## Word shape features (5 token window)
+    istitle = w.istitle()
+    isdigit = context(0, WORD).isdigit()
+    isupper = w.isupper()
+    hyphen = "-" in w
+    isalnum = context(0, WORD).isalnum()
+    
+    pre_istitle = pre_w.istitle()
+    pre_isdigit = context(-1, WORD).isdigit()
+    pre_isupper = pre_w.isupper()
+    pre_hyphen = "-" in pre_w
+    pre_isalnum = context(-1, WORD).isalnum()
+
+    pre_pre_istitle = pre_pre_w.istitle()
+    pre_pre_isdigit = context(-2, WORD).isdigit()
+    pre_pre_isupper = pre_pre_w.isupper()
+    pre_pre_hyphen = "-" in pre_pre_w
+    pre_pre_isalnum = context(-2, WORD).isalnum()
+
+    post_istitle = post_w.istitle()
+    post_isdigit = context(1, WORD).isdigit()
+    post_isupper = post_w.isupper()
+    post_hypen = "-" in post_w
+    post_isalnum = context(1, WORD).isalnum()
+
+    post_post_istitle = post_post_w.istitle()
+    post_post_isdigit = context(2, WORD).isdigit()
+    post_post_isupper = post_post_w.isupper()
+    post_post_hypen = "-" in post_post_w
+    post_post_isalnum = context(2, WORD).isalnum()
+
+    ## 2-4 suffixes in a 3 token window
+    w_suffix1 = w[-1:]
+    w_suffix2 = w[-2:]
+    w_suffix3 = w[-3:]
+    w_suffix4 = w[-4:]
+
+    pre_w_suffix1 = pre_w[-1:]
+    pre_w_suffix2 = pre_w[-2:]
+    pre_w_suffix3 = pre_w[-3:]
+    pre_w_suffix4 = pre_w[-4:]
+
+    post_w_suffix1 = post_w[-1:]
+    post_w_suffix2 = post_w[-2:]
+    post_w_suffix3 = post_w[-3:]
+    post_w_suffix4 = post_w[-4:]
+
+    ## 3-4 prefixes in a 3 token window
+    w_prefix3 = w[:3]
+    w_prefix4 = w[:4]
+
+    pre_w_prefix3 = pre_w[:3]
+    pre_w_prefix4 = pre_w[:4]
+
+    post_w_prefix3 = post_w[:3]
+    post_w_prefix4 = post_w[:4]
+
+    ## Noun phrase in a 3 token window
+    np = context(0,NP)
+    np_w = "/".join([np, w])
+    pre_np = context(-1, NP)
+    post_np = context(1, NP)
+
+    ## Extract features from local scope
+    features = locals()
+    del features["context"]
+    del features["sent"]
+    del features["index"]
+    del features["length"]
+    features = features.items()
+    return features
+
+
+def old_hd(tags, sent, index, length):
+    context = lambda idx, field: sent[index + idx][field] \
+              if index+idx >= 0 and index + idx < length \
+              else "<s>" if index+idx < 0 \
+              else "</s>"
+
+    pre_tag = tags[index - 1] if index - 1 >= 0 else "<s>"
+    pre_pre_tag = tags[index - 2] if index - 2 >= 0 else "<s>"
+    pre_tag_w = "/".join([pre_tag, context(0, WORD)])
+    pre_tag_w = "/".join([pre_tag, context(-1, WORD)])
+    pre_tag_w = "/".join([pre_tag, context(-2, WORD)])
+    pre_tag_w = "/".join([pre_tag, context(1, WORD)])
+    pre_tag_w = "/".join([pre_tag, context(2, WORD)])
+    tag_bigram = "/".join([pre_pre_tag, pre_tag])
+
+    history = locals()
+    del history["context"]
+    del history["tags"]
+    del history["sent"]
+    del history["index"]
+    del history["length"]
+    history = history.items()
     return history
 
 class ASO(object):
@@ -175,7 +295,7 @@ class ASO(object):
         self.fidx_map = model.fidx_map
         self.vocabulary = model.V
         self.ds = tagger.build_examples(reader, model.fd, model.hd,
-                                        model.V, model.T)
+                                        model.fidx_map, model.T)
 
     def instances_by_pos_prefix(self, prefix):
         indices = []
@@ -283,6 +403,11 @@ def train_args_parser():
                       dest="stats",
                       default=False,
                       help="Print model statistics.")
+    parser.add_option("--eph",
+                      action="store_true",
+                      dest="use_eph",
+                      default=False,
+                      help="Use Extended Prediction History.")
     parser.add_option("--aso",
                       action="store_true",
                       dest="aso",
@@ -309,15 +434,18 @@ def train():
     f_train = argv[0]
     f_model = argv[1]
     train_reader = conll.Conll03Reader(f_train, options.lang)
-    #model = tagger.AvgPerceptronTagger(fd, hd)
+    #model = tagger.AvgPerceptronTagger(fd, hd, verbose=options.verbose)
     model = tagger.GreedySVMTagger(fd, hd, verbose=options.verbose)
-    model.feature_extraction(train_reader, options.minc)
+    model.feature_extraction(train_reader, minc=options.minc,
+                             use_eph=options.use_eph)
     if options.aso:
-        unlabeled_reader = conll.Conll03Reader(options.funlabeled, options.lang)
+        unlabeled_reader = conll.Conll03Reader(options.funlabeled,
+                                               options.lang)
         aso = ASO(model, unlabeled_reader)
         aso.learn()
         sys.exit()
-    model.train(reg=options.reg, epochs=options.epochs, shuffle=options.shuffle)
+    model.train(reg=options.reg, epochs=options.epochs,
+                shuffle=options.shuffle)
     if options.stats:
         print "------------------------------"
         print " Stats\n"
@@ -384,6 +512,9 @@ def predict():
     model = pickle.load(f)
     f.close()
     print >> sys.stderr, "[done]"
+    if model.use_eph:
+        print >> sys.stderr, "model.eph", model.eph
+        print >> sys.stderr, "model.eph['EU']", model.eph["EU"]
     test_reader = conll.Conll03Reader(argv[1], lang)
     if argv[2] != "-":
         f = open(argv[2], "w+")

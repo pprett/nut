@@ -1,0 +1,155 @@
+
+===========
+ENGLISH NER
+===========
+
+Averagend Perceptron
+********************
+
+RR09-Shuf-unbiased-E65
+----------------------
+test.iob2
+processed 46435 tokens with 5648 phrases; found: 5566 phrases; correct: 4633.
+accuracy:  96.35%; precision:  83.24%; recall:  82.03%; FB1:  82.63
+              LOC: precision:  86.06%; recall:  87.35%; FB1:  86.70  1693
+             MISC: precision:  77.39%; recall:  75.07%; FB1:  76.21  681
+              ORG: precision:  80.23%; recall:  74.29%; FB1:  77.15  1538
+              PER: precision:  85.55%; recall:  87.51%; FB1:  86.52  1654
+dev.iob2
+processed 51362 tokens with 5942 phrases; found: 5831 phrases; correct: 5241.
+accuracy:  97.85%; precision:  89.88%; recall:  88.20%; FB1:  89.03
+              LOC: precision:  92.54%; recall:  92.49%; FB1:  92.51  1836
+             MISC: precision:  89.06%; recall:  82.10%; FB1:  85.44  850
+              ORG: precision:  84.21%; recall:  81.51%; FB1:  82.83  1298
+              PER: precision:  91.61%; recall:  91.86%; FB1:  91.73  1847
+
+RR09-Seq-unbiased
+-----------------
+test.iob2
+processed 46435 tokens with 5648 phrases; found: 5569 phrases; correct: 4607.
+accuracy:  96.22%; precision:  82.73%; recall:  81.57%; FB1:  82.14
+              LOC: precision:  86.64%; recall:  86.69%; FB1:  86.66  1669
+             MISC: precision:  76.13%; recall:  74.50%; FB1:  75.31  687
+              ORG: precision:  79.19%; recall:  73.99%; FB1:  76.50  1552
+              PER: precision:  84.83%; recall:  87.14%; FB1:  85.97  1661
+dev.iob2
+processed 51362 tokens with 5942 phrases; found: 5819 phrases; correct: 5231.
+accuracy:  97.81%; precision:  89.90%; recall:  88.03%; FB1:  88.96
+              LOC: precision:  92.84%; recall:  92.43%; FB1:  92.64  1829
+             MISC: precision:  89.14%; recall:  81.89%; FB1:  85.36  847
+              ORG: precision:  84.41%; recall:  81.58%; FB1:  82.97  1296
+              PER: precision:  91.17%; recall:  91.42%; FB1:  91.30  1847
+
+RR09-Shuffled-biased
+--------------------
+test.iob2
+accuracy:  96.22%; precision:  82.73%; recall:  81.57%; FB1:  82.14
+              LOC: precision:  86.64%; recall:  86.69%; FB1:  86.66  1669
+             MISC: precision:  76.13%; recall:  74.50%; FB1:  75.31  687
+              ORG: precision:  79.19%; recall:  73.99%; FB1:  76.50  1552
+              PER: precision:  84.83%; recall:  87.14%; FB1:  85.97  1661
+dev.iob2
+processed 51362 tokens with 5942 phrases; found: 5837 phrases; correct: 5231.
+accuracy:  97.78%; precision:  89.62%; recall:  88.03%; FB1:  88.82
+              LOC: precision:  92.45%; recall:  92.00%; FB1:  92.22  1828
+             MISC: precision:  88.80%; recall:  82.54%; FB1:  85.55  857
+              ORG: precision:  84.18%; recall:  81.73%; FB1:  82.94  1302
+              PER: precision:  91.03%; recall:  91.42%; FB1:  91.22  1850
+
+RR09-Shuffled-unbiased-nopos
+----------------------------
+test.iob2
+processed 46435 tokens with 5648 phrases; found: 5529 phrases; correct: 4631.
+accuracy:  96.39%; precision:  83.76%; recall:  81.99%; FB1:  82.87
+              LOC: precision:  87.18%; recall:  87.23%; FB1:  87.20  1669
+             MISC: precision:  76.88%; recall:  75.78%; FB1:  76.33  692
+              ORG: precision:  81.18%; recall:  74.53%; FB1:  77.72  1525
+              PER: precision:  85.58%; recall:  86.95%; FB1:  86.26  1643
+dev.iob2
+processed 51362 tokens with 5942 phrases; found: 5789 phrases; correct: 5203.
+accuracy:  97.80%; precision:  89.88%; recall:  87.56%; FB1:  88.71
+              LOC: precision:  93.14%; recall:  91.62%; FB1:  92.37  1807
+             MISC: precision:  89.14%; recall:  81.89%; FB1:  85.36  847
+              ORG: precision:  84.85%; recall:  81.43%; FB1:  83.11  1287
+              PER: precision:  90.53%; recall:  90.83%; FB1:  90.68  1848
+
+RR09-Shuffled-unbiased-nopos
+----------------------------
+test.iob2
+processed 46435 tokens with 5648 phrases; found: 5589 phrases; correct: 4656.
+accuracy:  96.38%; precision:  83.31%; recall:  82.44%; FB1:  82.87
+              LOC: precision:  87.17%; recall:  87.95%; FB1:  87.56  1683
+             MISC: precision:  77.49%; recall:  75.50%; FB1:  76.48  684
+              ORG: precision:  79.56%; recall:  74.53%; FB1:  76.97  1556
+              PER: precision:  85.29%; recall:  87.88%; FB1:  86.57  1666
+dev.iob2
+processed 51362 tokens with 5942 phrases; found: 5827 phrases; correct: 5221.
+accuracy:  97.76%; precision:  89.60%; recall:  87.87%; FB1:  88.72
+              LOC: precision:  92.87%; recall:  91.51%; FB1:  92.19  1810
+             MISC: precision:  89.63%; recall:  81.56%; FB1:  85.41  839
+              ORG: precision:  83.93%; recall:  82.18%; FB1:  83.04  1313
+              PER: precision:  90.40%; recall:  91.53%; FB1:  90.96  1865
+
+ZJ03-Sequential-biased-E80
+--------------------------
+test.iob2
+processed 46435 tokens with 5648 phrases; found: 5558 phrases; correct: 4611.
+accuracy:  96.25%; precision:  82.96%; recall:  81.64%; FB1:  82.30
+              LOC: precision:  87.21%; recall:  87.11%; FB1:  87.16  1666
+             MISC: precision:  77.09%; recall:  74.79%; FB1:  75.92  681
+              ORG: precision:  79.33%; recall:  73.93%; FB1:  76.53  1548
+              PER: precision:  84.49%; recall:  86.89%; FB1:  85.67  1663
+dev.iob2
+processed 51362 tokens with 5942 phrases; found: 5822 phrases; correct: 5231.
+accuracy:  97.76%; precision:  89.85%; recall:  88.03%; FB1:  88.93
+              LOC: precision:  92.37%; recall:  92.27%; FB1:  92.32  1835
+             MISC: precision:  88.98%; recall:  82.32%; FB1:  85.52  853
+              ORG: precision:  85.05%; recall:  81.43%; FB1:  83.20  1284
+              PER: precision:  91.08%; recall:  91.48%; FB1:  91.28  1850
+
+ZJ03-Sequential-biased-E70
+--------------------------
+
+processed 46435 tokens with 5648 phrases; found: 5561 phrases; correct: 4608.
+accuracy:  96.24%; precision:  82.86%; recall:  81.59%; FB1:  82.22
+              LOC: precision:  86.94%; recall:  86.99%; FB1:  86.96  1669
+             MISC: precision:  77.27%; recall:  75.07%; FB1:  76.16  682
+              ORG: precision:  79.51%; recall:  73.81%; FB1:  76.55  1542
+              PER: precision:  84.17%; recall:  86.83%; FB1:  85.48  1668
+
+processed 51362 tokens with 5942 phrases; found: 5825 phrases; correct: 5234.
+accuracy:  97.77%; precision:  89.85%; recall:  88.08%; FB1:  88.96
+              LOC: precision:  92.42%; recall:  92.27%; FB1:  92.35  1834
+             MISC: precision:  88.46%; recall:  82.32%; FB1:  85.28  858
+              ORG: precision:  85.43%; recall:  81.36%; FB1:  83.35  1277
+              PER: precision:  91.00%; recall:  91.69%; FB1:  91.35  1856
+
+
+
+Greedy SVM
+**********
+
+ZJ03-Permute-biased-E100-R1e-5
+------------------------------
+test.iob2
+processed 46435 tokens with 5648 phrases; found: 5601 phrases; correct: 4741.
+accuracy:  96.55%; precision:  84.65%; recall:  83.94%; FB1:  84.29
+              LOC: precision:  85.46%; recall:  88.43%; FB1:  86.92  1726
+             MISC: precision:  76.37%; recall:  75.50%; FB1:  75.93  694
+              ORG: precision:  82.19%; recall:  75.86%; FB1:  78.90  1533
+              PER: precision:  89.56%; recall:  91.28%; FB1:  90.41  1648
+dev.iob2
+processed 51362 tokens with 5942 phrases; found: 5860 phrases; correct: 5360.
+accuracy:  98.03%; precision:  91.47%; recall:  90.21%; FB1:  90.83
+              LOC: precision:  91.98%; recall:  94.28%; FB1:  93.12  1883
+             MISC: precision:  88.49%; recall:  83.41%; FB1:  85.87  869
+              ORG: precision:  88.02%; recall:  83.30%; FB1:  85.59  1269
+              PER: precision:  94.73%; recall:  94.57%; FB1:  94.65  1839
+
+
+
+==========
+GERMAN NER
+==========
+
+
