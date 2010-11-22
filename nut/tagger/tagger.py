@@ -120,7 +120,7 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False):
                     dist = eph[w]
                     dist = [("eph", T[i], v) for i, v in enumerate(dist)]
                     enc_features = chain(enc_features, encode_numeric(dist))
-                if tag != "O":
+                if tag != "O" and tag != "Unk":
                     eph.push(w, tag)
 
             instance = asinstance(enc_features, fidx_map)
@@ -136,10 +136,24 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False):
 
 
 class Tagger(object):
-    """Tagger base class."""
-    def __init__(self, fd, hd, verbose=0):
+    """Tagger base class.
+
+    Parameters
+    ----------
+    fd : func
+        The feature detector function.
+    hd : func
+        The history detector function.
+    lang : str
+        The language of the tagger.
+    verbose : int
+        The verbosity level of the tagger. 
+
+    """
+    def __init__(self, fd, hd, lang="en", verbose=0):
         self.fd = fd
         self.hd = hd
+        self.lang = lang
         self.verbose = verbose
 
     def tag(self, sent):
@@ -187,7 +201,7 @@ class GreedyTagger(Tagger):
         print "building examples..."
         dataset = build_examples(train_reader, self.fd, self.hd,
                                  self.fidx_map, T, use_eph=self.use_eph)
-        dataset.shuffle(13)
+        #dataset.shuffle(9)
         self.dataset = dataset
         if use_eph:
             self.eph = ExtendedPredictionHistory(self.tidx_map)
@@ -223,6 +237,7 @@ class GreedyTagger(Tagger):
             features.extend(history)
             enc_features = encode_indicator(features)
             if self.use_eph:
+                # add eph dist as numeric features
                 if w in self.eph:
                     dist = self.eph[w]
                     dist = [("eph", self.T[i], v) for i, v in enumerate(dist)]
@@ -231,7 +246,7 @@ class GreedyTagger(Tagger):
             p = self.glm(instance)
             tag = self.tag_map[p]
             tag_seq.append(tag)
-            if self.use_eph and tag != "O":
+            if self.use_eph and tag != "O" and tag != "Unk":
                 self.eph.push(w, tag)
             yield tag_seq[-1]
 
