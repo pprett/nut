@@ -33,6 +33,8 @@ class Conll03Reader(object):
     ----------
     path : str
         The path to the iob file.
+    lang : str
+        The language of the text (either 'en' or 'de'). 
     iob : int, 1 or 2 or 3
         The iob encoding to be used.
     """

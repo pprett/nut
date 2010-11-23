@@ -1,0 +1,9 @@
+#!/usr/bin/python
+#
+# Author: Peter Prettenhofer <peter.prettenhofer@gmail.com>
+#
+# License: BSD Style
+
+import nut.ner.aso
+
+nut.ner.aso.train()

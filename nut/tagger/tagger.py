@@ -7,7 +7,7 @@ tagger
 
 TODO docs
 """
-
+import sys
 import numpy as np
 import bolt
 
@@ -18,10 +18,21 @@ from ..ner.nonlocal import ExtendedPredictionHistory
 
 
 @timeit
-def build_vocabulary(reader, fd, hd, minc=1, use_eph=False):
+def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
+                     verbose=0):
     """
     Arguments
     ---------
+    readers : list or ConllReader
+        The input data reader(s).
+    fd : func
+        The feature detector (= node features).
+    hd : func
+        The history detector (= edge features).
+    minc : int
+        The minimum feature count to be included in the vocabulary.
+    use_eph : bool
+        Whether or not extended prediction history should be used.
 
     Returns
     -------
@@ -30,23 +41,35 @@ def build_vocabulary(reader, fd, hd, minc=1, use_eph=False):
     tags : list
         The list of tags.
     """
+    if not isinstance(readers, list):
+        readers = [readers]
     tags = set()
     vocabulary = defaultdict(int)
-    for sent in reader.sents():
-        untagged_sent = [token for (token, tag) in sent]
-        tag_seq = [tag for (token, tag) in sent]
-        for tag in tag_seq:
-            tags.add(tag)
-        length = len(untagged_sent)
-        for index in range(length):
-            features = fd(untagged_sent, index, length)
-            pre_tags = tag_seq[:index]
-            history = hd(pre_tags, untagged_sent, index, length)
-            features.extend(history)
-            features = ("%s=%s" % (ftype, fval)
-                        for ftype, fval in features if fval)
-            for fx in features:
-                vocabulary[fx] += 1
+    i = 0
+    if verbose > 0:
+        print "process sentences..."
+    for reader in readers:
+        for sent in reader.sents():
+            untagged_sent = [token for (token, tag) in sent]
+            tag_seq = [tag for (token, tag) in sent]
+            for tag in tag_seq:
+                # skip unlabeled examples
+                if tag != "Unk":
+                    tags.add(tag)
+            length = len(untagged_sent)
+            for index in range(length):
+                features = fd(untagged_sent, index, length)
+                pre_tags = tag_seq[:index]
+                history = hd(pre_tags, untagged_sent, index, length)
+                features.extend(history)
+                features = ("%s=%s" % (ftype, fval)
+                            for ftype, fval in features if fval)
+                for fx in features:
+                    vocabulary[fx] += 1
+                i += 1
+                if i % 100000 == 0:
+                    if verbose > 0:
+                        print i
     vocabulary = [fx for fx, c in vocabulary.iteritems() if c > minc]
     # If extended prediction history is used add |tags| features.
     if use_eph:
@@ -96,7 +119,8 @@ def asinstance(enc_features, fidx_map):
 
 
 @timeit
-def build_examples(reader, fd, hd, fidx_map, T, use_eph=False):
+def build_examples(reader, fd, hd, fidx_map, T, use_eph=False,
+                   pos_prefixes=[], pos_idx=1):
     tidx_map = dict([(tag, i) for i, tag in enumerate(T)])
     instances = []
     labels = []
@@ -107,27 +131,40 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False):
         untagged_sent, tag_seq = zip(*sent)
         length = len(untagged_sent)
         for index in range(length):
+            # skip token if not one of the pos prefixes
+            skip = not np.any([sent[index][0][pos_idx].startswith(prefix)
+                               for prefix in pos_prefixes])
+            if skip:
+                continue
+
+            # extract node and edge features
             features = fd(untagged_sent, index, length)
             pre_tags = tag_seq[:index]
             tag = tag_seq[index]
             history = hd(pre_tags, untagged_sent,
                          index, length)
             features.extend(history)
+
+            # encode node and edge features as indicators
             enc_features = encode_indicator(features)
             if use_eph:
                 w = untagged_sent[index][0]
+                # add EPH to encoded features
                 if w in eph:
                     dist = eph[w]
                     dist = [("eph", T[i], v) for i, v in enumerate(dist)]
                     enc_features = chain(enc_features, encode_numeric(dist))
+                # update EPH
                 if tag != "O" and tag != "Unk":
                     eph.push(w, tag)
 
-            instance = asinstance(enc_features, fidx_map)
+            # Encode unlabeled token as -1
             if tag == "Unk":
                 tag = -1
             else:
                 tag = tidx_map[tag]
+
+            instance = asinstance(enc_features, fidx_map)
             instances.append(instance)
             labels.append(tag)
     instances = bolt.fromlist(instances, np.object)
@@ -147,7 +184,7 @@ class Tagger(object):
     lang : str
         The language of the tagger.
     verbose : int
-        The verbosity level of the tagger. 
+        The verbosity level of the tagger.
 
     """
     def __init__(self, fd, hd, lang="en", verbose=0):
@@ -183,8 +220,7 @@ class GreedyTagger(Tagger):
     def feature_extraction(self, train_reader, minc=1, use_eph=False):
         """Extracts the features from the given training reader.
         Builds up various data structures such as the vocabulary and
-        the tag set. Furthermore, it creates a training set from the
-        given training reader.
+        the tag set.
         """
         print "------------------------------"
         print "Feature extraction".center(30)
@@ -198,18 +234,20 @@ class GreedyTagger(Tagger):
         self.fidx_map = dict([(fname, i) for i, fname in enumerate(V)])
         self.tidx_map = dict([(tag, i) for i, tag in enumerate(T)])
         self.tag_map = dict([(i, t) for i, t in enumerate(T)])
-        print "building examples..."
+
+    @timeit
+    def train(self, train_reader, reg=0.0001, epochs=30, shuffle=False):
+        T = self.T
+        # Create EPH if necessary
+        if self.use_eph:
+            self.eph = ExtendedPredictionHistory(self.tidx_map)
+        print "Creating training examples...",
+        sys.stdout.flush()
         dataset = build_examples(train_reader, self.fd, self.hd,
                                  self.fidx_map, T, use_eph=self.use_eph)
         #dataset.shuffle(9)
-        self.dataset = dataset
-        if use_eph:
-            self.eph = ExtendedPredictionHistory(self.tidx_map)
+        print "[done]"
 
-    @timeit
-    def train(self, reg=0.0001, epochs=30, shuffle=False):
-        dataset = self.dataset
-        T = self.T
         print "------------------------------"
         print "Training".center(30)
         print "num examples: %d" % dataset.n

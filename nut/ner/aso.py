@@ -13,9 +13,68 @@ from time import time
 from itertools import islice
 from ..io import conll
 from ..tagger import tagger
+from ..structlearn.pivotselection import FreqSelector
 
 
 __version__ = "0.1"
+
+
+class ASO(object):
+    """Alternating structural optimization for Named Entity Recognition.
+    """
+    def __init__(self, fd, hd, vocabulary, tags, use_eph=False):
+        self.fd = fd
+        self.hd = hd
+        self.vocabulary = vocabulary
+        self.tags = tags
+        self.use_eph = use_eph
+        self.fidx_map = dict([(fname, i) for i, fname in enumerate(vocabulary)])
+        self.tidx_map = dict([(tag, i) for i, tag in enumerate(tags)])
+        self.tag_map = dict([(i, t) for i, t in enumerate(tags)])
+
+    def preselect_tasks(self):
+        preselection = set()
+        for fx in self.fidx_map:
+            if fx.startswith("w=") or fx.startswith("pre_w=") \
+               or fx.startswith("post_w="):
+                preselection.add(self.fidx_map[fx])
+        return preselection
+
+    def create_aux_tasks(self, m):
+        preselection = self.preselect_tasks()
+        aux_tasks = list(islice(
+            FreqSelector(0).select(self.dataset, preselection), m))
+        return aux_tasks
+
+    def print_tasks(self, tasks):
+        for task in tasks:
+            print self.vocabulary[task]
+
+    def learn(self, reader):
+        """Learns the ASO embedding theta.
+
+        Parameters
+        ----------
+        reader : ConllReader
+            The unlabeled data reader.
+        Returns
+        -------
+        self
+        """
+        print "run ASO.learn..."
+        self.dataset = tagger.build_examples(reader, self.fd, self.hd,
+                                             self.fidx_map, self.tags,
+                                             pos_prefixes=["NN", "JJ"])
+        print "num examples: %d" % self.dataset.n
+        #self.filter_noun_adjectives()
+        aux_tasks = self.create_aux_tasks(100)
+        self.print_tasks(aux_tasks)
+##      ds.shuffle(9)
+        ## struct_learner = structlearn.StructLearner(k, ds, pivots,
+##                                                 self.trainer,
+##                                                 self.strategy)
+##      struct_learner.learn()
+        return self
 
 
 def train_args_parser():
@@ -24,7 +83,7 @@ def train_args_parser():
     """
     description = """%s    """ % str(__file__)
     parser = optparse.OptionParser(usage="%prog [options] " \
-                                   "train_file model_file",
+                                   "train_file unlabeled_file model_file",
                                    version="%prog " + __version__,
                                    description = description)
     parser.add_option("-v", "--verbose",
@@ -75,22 +134,11 @@ def train_args_parser():
                       dest="shuffle",
                       default=False,
                       help="Shuffle the training data after each epoche.")
-    parser.add_option("--stats",
-                      action="store_true",
-                      dest="stats",
-                      default=False,
-                      help="Print model statistics.")
     parser.add_option("--eph",
                       action="store_true",
                       dest="use_eph",
                       default=False,
                       help="Use Extended Prediction History.")
-    parser.add_option("--aso",
-                      action="store_true",
-                      dest="aso",
-                      default=False,
-                      help="Use Alternating Structural Optimization.")
-
     return parser
 
 
@@ -99,14 +147,14 @@ def train():
     """
     parser = train_args_parser()
     options, argv = parser.parse_args()
-    if len(argv) != 2:
+    if len(argv) != 3:
         parser.error("incorrect number of arguments (use `--help` for help).")
-    if options.aso:
-        if not options.funlabeled:
-            raise parser.error("specify unlabeled data with --unlabeled. ")
+
     # get filenames
     f_train = argv[0]
-    f_model = argv[1]
+    f_unlabeled = argv[1]
+    f_model = argv[2]
+    
     # get feature extraction module
     try:
         import_path = "nut.ner.features.%s" % options.feature_module
@@ -119,28 +167,25 @@ def train():
         sys.exit(-2)
 
     train_reader = conll.Conll03Reader(f_train, options.lang)
-
-    if options.aso:
-        print "ASO not yet implemented."
-        sys.exit(-1)
-
+    unlabeled_reader = conll.Conll03Reader(f_unlabeled,
+                                           options.lang)
+    readers = [train_reader, unlabeled_reader]
+    print "build vocabulary..."
+    V, T = tagger.build_vocabulary(readers, fd, hd, minc=options.minc,
+                                       use_eph=options.use_eph)
+    model = ASO(fd, hd, V, T, use_eph=options.use_eph)
+    model.learn(unlabeled_reader)
     
-    #model = tagger.AvgPerceptronTagger(fd, hd, verbose=options.verbose)
-    model = tagger.GreedySVMTagger(fd, hd, lang=options.lang,
-                                   verbose=options.verbose)
-    model.feature_extraction(train_reader, minc=options.minc,
-                             use_eph=options.use_eph)
-    
-    model.train(train_reader, reg=options.reg, epochs=options.epochs,
-                shuffle=options.shuffle)
-    if options.stats:
-        print "------------------------------"
-        print " Stats\n"
-        model.describe(k=40)
-        nnz = 0
-        for instance in model.dataset.iterinstances():
-            nnz += instance.shape[0]
-        print "avg. nnz: %.4f" % (float(nnz) / model.dataset.n)
+    print "|V|:", len(V)
+    print "|T|:", len(T)
+    print "T:", T
+    #aso = ASO(model, unlabeled_reader)
+    #aso.learn()
+    sys.exit()
+
+    ## TODO implement ASO code here
+
+    # dump the model
     if f_model.endswith(".gz"):
         import gzip
         f = gzip.open(f_model, mode="wb")
@@ -151,50 +196,3 @@ def train():
         f = open(f_model)
     pickle.dump(model, f)
     f.close()
-
-
-def predict():
-    """Test script for Named Entity Recognizer.
-    """
-    def usage():
-        print """Usage: %s [OPTIONS] MODEL_FILE TEST_FILE PRED_FILE
-        Load NER model from MODEL_FILE, test the model on
-        TEST_FILE and write predictions to PRED_FILE.
-        The predictions are appended to the test file.
-        Options:
-          -h, --help\tprint this help.
-
-        """ % sys.argv[0]
-    argv = sys.argv[1:]
-    if "--help" in argv or "-h" in argv:
-        usage()
-        sys.exit(-2)
-    if len(argv) != 3:
-        print "Error: wrong number of arguments. "
-        usage()
-        sys.exit(-2)
-
-    print >> sys.stderr, "loading tagger...",
-    sys.stderr.flush()
-    f_model = argv[0]
-    if f_model.endswith(".gz"):
-        import gzip
-        f = gzip.open(f_model, mode="rb")
-    elif f_model.endswith(".bz2"):
-        import bz2
-        f = bz2.BZ2File(f_model, mode="r")
-    else:
-        f = open(f_model)
-    model = pickle.load(f)
-    f.close()
-    print >> sys.stderr, "[done]"
-    print >> sys.stderr, "use_eph: ", model.use_eph
-    test_reader = conll.Conll03Reader(argv[1], model.lang)
-    if argv[2] != "-":
-        f = open(argv[2], "w+")
-    else:
-        f = sys.stdout
-    t0 = time()
-    test_reader.write_sent_predictions(model, f, raw=False)
-    f.close()
-    print >> sys.stderr, "processed input in %.4fs sec." % (time() - t0)
