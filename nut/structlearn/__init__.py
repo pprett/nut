@@ -21,3 +21,7 @@ This package provides functionality for
 """
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
+
+from .structlearn import StructLearner, Error
+import auxtrainer
+import auxstrategy

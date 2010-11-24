@@ -39,14 +39,40 @@ class StructLearner(object):
     """
     Structural Learner.
 
-    This class learns the structural parameter theta from a seq of auxiliary tasks and provides functionality to project instances into the new feature space induced by theta. 
+    This class learns the structural parameter theta from a seq of
+    auxiliary tasks and provides functionality to project instances
+    into the new feature space induced by theta.
+
+    Parameters
+    ----------
+    k : int
+        The dimensionality of the shared representation.
+    ds : bolt.MemoryDataset
+        The unlabeled data set.
+    auxtasks : list
+        A list of features (or tuples of features);
+        each representing one task.
+    classifier_trainer : AuxTrainer
+        The trainer for the auxiliary classifiers. 
+    training_strategy : TrainingStrategy
+        The strategy how to invoke the `classifier_trainer`.
+
+    Attributes
+    ----------
+    `ds` : bolt.MemoryDataset
+        The unlabeled data set.
+    `auxtask` : list
+        A list of tuples; each tuple contains a set of features
+        which comprise the task.
+    
     """
 
     def __init__(self, k, ds, auxtasks, classifier_trainer, training_strategy):
-	if k < 1 or k > len(auxtasks):
+        if k < 1 or k > len(auxtasks):
 	    raise Error("0 < k < m")
 	self.ds = ds
-	self.auxtasks = auxtasks
+	self.auxtasks = [task if isinstance(task, tuple) else (task,)
+                         for task in auxtasks]
 	self.n = ds.n
 	self.dim = ds.dim
 	self.k = k
@@ -59,8 +85,8 @@ class StructLearner(object):
 	iidx = defaultdict(list)
 	fid_task_map = defaultdict(list)
 	for i, task in enumerate(self.auxtasks):
-	    for fx in task:
-		fid_task_map[fx].append(i)
+            for fx in task:
+                fid_task_map[fx].append(i)
 		
 	for i, x in enumerate(self.ds.iterinstances()):
 	    for fid, fval in x:

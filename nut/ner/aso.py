@@ -14,6 +14,8 @@ from itertools import islice
 from ..io import conll
 from ..tagger import tagger
 from ..structlearn.pivotselection import FreqSelector
+from ..structlearn import StructLearner
+from ..structlearn import auxtrainer, auxstrategy
 
 
 __version__ = "0.1"
@@ -40,17 +42,35 @@ class ASO(object):
                 preselection.add(self.fidx_map[fx])
         return preselection
 
-    def create_aux_tasks(self, m):
+    def create_aux_tasks(self, dataset, m):
+        """Select the m most frequent left, right, and current words.
+
+        TODO: mask all features derived from the left, right, and current word. 
+
+        Parameters
+        ----------
+        m : int
+            The number of tasks to generate.
+
+        Returns
+        -------
+        aux_tasks : list
+            The list of auxiliary tasks. These correspond to features
+            which will subsequently be used to autolabel the unlabeled data.
+        task_masks : list
+            A list of feature tuples. The i-th tuple holds the masked features
+            for the i-th auxiliary task.
+        """
         preselection = self.preselect_tasks()
         aux_tasks = list(islice(
-            FreqSelector(0).select(self.dataset, preselection), m))
-        return aux_tasks
+            FreqSelector(0).select(dataset, preselection), m))
+        return aux_tasks, aux_tasks
 
     def print_tasks(self, tasks):
         for task in tasks:
             print self.vocabulary[task]
 
-    def learn(self, reader):
+    def learn(self, reader, m, k):
         """Learns the ASO embedding theta.
 
         Parameters
@@ -62,18 +82,33 @@ class ASO(object):
         self
         """
         print "run ASO.learn..."
-        self.dataset = tagger.build_examples(reader, self.fd, self.hd,
-                                             self.fidx_map, self.tags,
-                                             pos_prefixes=["NN", "JJ"])
-        print "num examples: %d" % self.dataset.n
-        #self.filter_noun_adjectives()
-        aux_tasks = self.create_aux_tasks(100)
-        self.print_tasks(aux_tasks)
-##      ds.shuffle(9)
-        ## struct_learner = structlearn.StructLearner(k, ds, pivots,
-##                                                 self.trainer,
-##                                                 self.strategy)
-##      struct_learner.learn()
+        dataset = tagger.build_examples(reader, self.fd, self.hd,
+                                        self.fidx_map, self.tags,
+                                        pos_prefixes=["NN", "JJ"])
+        print "num examples: %d" % dataset.n
+        aux_tasks, masks = self.create_aux_tasks(dataset, m)
+        print "selected %d auxiliary tasks. " % len(aux_tasks)
+        # self.print_tasks(aux_tasks)
+        trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85,
+                                               10**6)
+        strategy = auxstrategy.HadoopTrainingStrategy()
+        struct_learner = StructLearner(k, dataset,
+                                       aux_tasks,
+                                       trainer,
+                                       strategy)
+        # learn the embedding
+        # TODO apply SVD by feature type.
+        struct_learner.learn()
+        
+
+        # TODO post-process embedding
+        # - project unlabeled data
+        # - compute and store mean and std
+
+        # store data in model
+        self.struct_learner = struct_learner
+        self.m = m
+        self.k = k
         return self
 
 
@@ -98,6 +133,18 @@ def train_args_parser():
                       default="rr09",
                       metavar="str",
                       type="str")
+    parser.add_option("-m",
+                      dest="m",
+                      help="Number of auxiliary tasks from left, right, and current word to create. ",
+                      default=1000,
+                      metavar="int",
+                      type="int")
+    parser.add_option("-k",
+                      dest="k",
+                      help="Dimensionality of the shared representation.", 
+                      default=50,
+                      metavar="int",
+                      type="int")
     parser.add_option("-r", "--reg",
                       dest="reg",
                       help="regularization parameter. ",
@@ -173,17 +220,13 @@ def train():
     print "build vocabulary..."
     V, T = tagger.build_vocabulary(readers, fd, hd, minc=options.minc,
                                        use_eph=options.use_eph)
-    model = ASO(fd, hd, V, T, use_eph=options.use_eph)
-    model.learn(unlabeled_reader)
-    
     print "|V|:", len(V)
     print "|T|:", len(T)
     print "T:", T
-    #aso = ASO(model, unlabeled_reader)
-    #aso.learn()
-    sys.exit()
-
-    ## TODO implement ASO code here
+    print
+    
+    model = ASO(fd, hd, V, T, use_eph=options.use_eph)
+    model.learn(unlabeled_reader, options.m, options.k)
 
     # dump the model
     if f_model.endswith(".gz"):

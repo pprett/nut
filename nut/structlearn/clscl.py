@@ -219,9 +219,9 @@ class CLSCLTrainer(object):
 						   self.trainer,
 						   self.strategy)
 	struct_learner.learn()
-	self.project(struct_learner.thetat, verbose = 1)
-	return CLSCLModel(struct_learner.thetat, mean = self.mean,
-			  std = self.std, avg_norm = self.avg_norm)
+	self.project(struct_learner.thetat, verbose=1)
+	return CLSCLModel(struct_learner.thetat, mean=self.mean,
+			  std=self.std, avg_norm=self.avg_norm)
 	
 
     @timeit
@@ -236,7 +236,7 @@ class CLSCLTrainer(object):
         such that the average L2 norm of the training examples
         equals 1. 
         """
-	s_train = structlearn.project(self.s_train, thetat, dense = True)
+	s_train = structlearn.project(self.s_train, thetat, dense=True)
 	s_unlabeled = structlearn.project(self.s_unlabeled, thetat,
 					  dense=True)
 	t_unlabeled = structlearn.project(self.t_unlabeled, thetat,
