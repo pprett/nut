@@ -12,7 +12,7 @@ import numpy as np
 import bolt
 
 from collections import defaultdict
-from itertools import chain
+from itertools import chain, repeat, izip
 from ..util import timeit
 from ..ner.nonlocal import ExtendedPredictionHistory
 
@@ -29,8 +29,10 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
         The feature detector (= node features).
     hd : func
         The history detector (= edge features).
-    minc : int
+    minc : int or list
         The minimum feature count to be included in the vocabulary.
+        If `minc` is a list, the i-th item is the min count of the i-th
+        reader in `readers`. 
     use_eph : bool
         Whether or not extended prediction history should be used.
 
@@ -43,12 +45,19 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
     """
     if not isinstance(readers, list):
         readers = [readers]
+    if isinstance(minc, list):
+        assert len(readers) == len(minc)
+        minc = iter(minc)
+    else:
+        minc = repeat(minc)
     tags = set()
-    vocabulary = defaultdict(int)
+    
     i = 0
     if verbose > 0:
         print "process sentences..."
-    for reader in readers:
+    all_vocabulary = set()
+    for reader, minc in izip(readers, minc):
+        vocabulary = defaultdict(int)
         for sent in reader.sents():
             untagged_sent = [token for (token, tag) in sent]
             tag_seq = [tag for (token, tag) in sent]
@@ -70,14 +79,14 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
                 if i % 100000 == 0:
                     if verbose > 0:
                         print i
-    vocabulary = [fx for fx, c in vocabulary.iteritems() if c >= minc]
+        all_vocabulary.update(set((fx for fx, c in vocabulary.iteritems() if c >= minc)))
     # If extended prediction history is used add |tags| features.
     if use_eph:
         for t in tags:
-            vocabulary.append("eph=%s" % t)
-    vocabulary = sorted(vocabulary)
+            all_vocabulary.add("eph=%s" % t)
+    all_vocabulary = sorted(all_vocabulary)
     tags = [t for t in tags]
-    return vocabulary, tags
+    return all_vocabulary, tags
 
 
 def encode_numeric(features):

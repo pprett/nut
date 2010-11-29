@@ -7,11 +7,12 @@
 import sys
 import optparse
 import numpy as np
-import cPickle as pickle
 
+from collections import defaultdict
 from time import time
 from itertools import islice
-from ..io import conll
+
+from ..io import conll, compressed_dump, compressed_load
 from ..tagger import tagger
 from ..structlearn.pivotselection import FreqSelector
 from ..structlearn import StructLearner
@@ -71,6 +72,18 @@ class ASO(object):
         for task in tasks:
             print self.vocabulary[task]
 
+    def create_feature_type_splits(self):
+        """compute begin and end idx for each feature type.
+        """
+        feature_types = defaultdict(list)
+        for i, fid in enumerate(self.vocabulary):
+            ftype = fid.split("=")[0]
+            feature_types[ftype].append(i)
+        for key, value in feature_types.iteritems():
+            value = np.array(value)
+            feature_types[key] = (value.min(), value.max())
+        return feature_types
+
     def learn(self, reader, m, k):
         """Learns the ASO embedding theta.
 
@@ -90,6 +103,7 @@ class ASO(object):
         aux_tasks, masks = self.create_aux_tasks(dataset, m)
         print "selected %d auxiliary tasks. " % len(aux_tasks)
         # self.print_tasks(aux_tasks)
+        feature_type_splits = self.create_feature_type_splits()
         trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85,
                                                10**6)
         strategy = auxstrategy.HadoopTrainingStrategy()
@@ -100,14 +114,15 @@ class ASO(object):
         # learn the embedding
         # TODO apply SVD by feature type.
         struct_learner.learn()
-        
+
         # TODO post-process embedding
         # - project unlabeled data
         # - compute and store mean and std
 
         # store data in model
         print
-        print "size of theta: %.2f MB" % (struct_learner.thetat.nbytes / 1024.0 / 1024.0)
+        print "size of theta: %.2f MB" % (struct_learner.thetat.nbytes
+                                          / 1024.0 / 1024.0)
         print
         self.thetat = struct_learner.thetat
         self.m = m
@@ -191,6 +206,12 @@ def train_args_parser():
                       dest="use_eph",
                       default=False,
                       help="Use Extended Prediction History.")
+    parser.add_option("--model",
+                      dest="model",
+                      default=False,
+                      help="Re-use an existing model for feature extraction.",
+                      metavar="str",
+                      type="str")
     return parser
 
 
@@ -207,29 +228,38 @@ def train():
     f_unlabeled = argv[1]
     f_model = argv[2]
 
-    # get feature extraction module
-    try:
-        import_path = "nut.ner.features.%s" % options.feature_module
-        mod = __import__(import_path, fromlist=[options.feature_module])
-        fd = mod.fd
-        hd = mod.hd
-    except ImportError:
-        print "Error: cannot import feature extractors " \
-              "from %s" % options.feature_module
-        sys.exit(-2)
+    if options.model:
+        model = compressed_load(options.model)
+    else:
+        # get feature extraction module
+        try:
+            import_path = "nut.ner.features.%s" % options.feature_module
+            mod = __import__(import_path, fromlist=[options.feature_module])
+            fd = mod.fd
+            hd = mod.hd
+        except ImportError:
+            print "Error: cannot import feature extractors " \
+                  "from %s" % options.feature_module
+            sys.exit(-2)
 
-    train_reader = conll.Conll03Reader(f_train, options.lang)
-    unlabeled_reader = conll.Conll03Reader(f_unlabeled,
-                                           options.lang)
-    readers = [train_reader, unlabeled_reader]
-    print "build vocabulary..."
-    V, T = tagger.build_vocabulary(readers, fd, hd, minc=options.minc,
-                                       use_eph=options.use_eph)
-    print "|V|:", len(V)
-    print "|T|:", len(T)
+        train_reader = conll.Conll03Reader(f_train, options.lang)
+        unlabeled_reader = conll.Conll03Reader(f_unlabeled,
+                                               options.lang)
+        readers = [train_reader, unlabeled_reader]
+        print "build vocabulary..."
+        # FIXME use minc+2 for unlabeled data.
+        V, T = tagger.build_vocabulary(readers, fd, hd, minc=[options.minc,
+                                                              options.minc + 2],
+                                           use_eph=options.use_eph)
+        print "|V|:", len(V)
+        print "|T|:", len(T)
+        print
+        model = ASO(fd, hd, V, T, use_eph=options.use_eph)
+
+    print "run model.learn"
+    print "m:", options.m
+    print "k:", options.k
     print
-    sys.exit(-1)
-    model = ASO(fd, hd, V, T, use_eph=options.use_eph)
     model.learn(unlabeled_reader, options.m, options.k)
 
     # dump the model
