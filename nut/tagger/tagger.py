@@ -131,11 +131,12 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False,
         untagged_sent, tag_seq = zip(*sent)
         length = len(untagged_sent)
         for index in range(length):
-            # skip token if not one of the pos prefixes
-            skip = not np.any([sent[index][0][pos_idx].startswith(prefix)
-                               for prefix in pos_prefixes])
-            if skip:
-                continue
+            if pos_prefixes != []:
+                # skip token if not one of the pos prefixes
+                skip = not np.any([sent[index][0][pos_idx].startswith(prefix)
+                                   for prefix in pos_prefixes])
+                if skip:
+                    continue
 
             # extract node and edge features
             features = fd(untagged_sent, index, length)
@@ -244,7 +245,8 @@ class GreedyTagger(Tagger):
         print "Creating training examples...",
         sys.stdout.flush()
         dataset = build_examples(train_reader, self.fd, self.hd,
-                                 self.fidx_map, T, use_eph=self.use_eph)
+                                 self.fidx_map, T,
+                                 use_eph=self.use_eph)
         #dataset.shuffle(9)
         print "[done]"
 

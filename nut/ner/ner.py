@@ -168,7 +168,7 @@ def predict():
 
     print >> sys.stderr, "loading tagger...",
     sys.stderr.flush()
-    model = compressed_load(f_model = argv[0])
+    model = compressed_load(argv[0])
     print >> sys.stderr, "[done]"
     print >> sys.stderr, "use_eph: ", model.use_eph
     test_reader = conll.Conll03Reader(argv[1], model.lang)

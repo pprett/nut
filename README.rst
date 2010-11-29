@@ -101,7 +101,7 @@ ner_predict
 You can use the prediction script to tag new sentences and write the output to a file or to stdout. 
 You can pipe the output directly to `conlleval` to assess the model performance::
 
-    ./ner_predict model_rr09.bz2 clner/en/conll03/test.iob2 - | ~/corpora/clner/scripts/conlleval
+    ./ner_predict model_rr09.bz2 clner/en/conll03/test.iob2 - | clner/scripts/conlleval
 
 
 References
