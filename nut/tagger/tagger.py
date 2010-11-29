@@ -70,7 +70,7 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
                 if i % 100000 == 0:
                     if verbose > 0:
                         print i
-    vocabulary = [fx for fx, c in vocabulary.iteritems() if c > minc]
+    vocabulary = [fx for fx, c in vocabulary.iteritems() if c >= minc]
     # If extended prediction history is used add |tags| features.
     if use_eph:
         for t in tags:

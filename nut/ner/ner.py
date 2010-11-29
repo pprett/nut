@@ -11,7 +11,7 @@ import cPickle as pickle
 
 from time import time
 from itertools import islice
-from ..io import conll
+from ..io import conll, compressed_dump, compressed_load
 from ..tagger import tagger
 
 
@@ -54,7 +54,7 @@ def train_args_parser():
     parser.add_option("--min-count",
                       dest="minc",
                       help="min number of occurances.",
-                      default=0,
+                      default=1,
                       metavar="int",
                       type="int")
     parser.add_option("--max-unlabeled",
@@ -141,16 +141,8 @@ def train():
         for instance in model.dataset.iterinstances():
             nnz += instance.shape[0]
         print "avg. nnz: %.4f" % (float(nnz) / model.dataset.n)
-    if f_model.endswith(".gz"):
-        import gzip
-        f = gzip.open(f_model, mode="wb")
-    elif f_model.endswith(".bz2"):
-        import bz2
-        f = bz2.BZ2File(f_model, mode="w")
-    else:
-        f = open(f_model)
-    pickle.dump(model, f)
-    f.close()
+
+    compressed_dump(f_model, model)
 
 
 def predict():
@@ -176,17 +168,7 @@ def predict():
 
     print >> sys.stderr, "loading tagger...",
     sys.stderr.flush()
-    f_model = argv[0]
-    if f_model.endswith(".gz"):
-        import gzip
-        f = gzip.open(f_model, mode="rb")
-    elif f_model.endswith(".bz2"):
-        import bz2
-        f = bz2.BZ2File(f_model, mode="r")
-    else:
-        f = open(f_model)
-    model = pickle.load(f)
-    f.close()
+    model = compressed_load(f_model = argv[0])
     print >> sys.stderr, "[done]"
     print >> sys.stderr, "use_eph: ", model.use_eph
     test_reader = conll.Conll03Reader(argv[1], model.lang)

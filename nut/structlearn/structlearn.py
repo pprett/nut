@@ -21,19 +21,18 @@ from ..util import timeit, trace
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 
 
-"""The minimum number of observed training examples for SGD. 
-"""
-
 def to_sparse_bolt(X):
-    """Convert n x dim numpy array to sequence of bolt instances. 
+    """Convert n x dim numpy array to sequence of bolt instances.
     """
     res = np.empty((len(X),), dtype=np.object)
     for i,x in enumerate(X):
-	res[i] = bolt.dense2sparse(x)
+        res[i] = bolt.dense2sparse(x)
     return bolt.fromlist(res, np.object)
+
 
 class Error(Exception):
     pass
+
 
 class StructLearner(object):
     """
@@ -53,87 +52,87 @@ class StructLearner(object):
         A list of features (or tuples of features);
         each representing one task.
     classifier_trainer : AuxTrainer
-        The trainer for the auxiliary classifiers. 
+        The trainer for the auxiliary classifiers.
     training_strategy : TrainingStrategy
         The strategy how to invoke the `classifier_trainer`.
 
     Attributes
     ----------
-    `ds` : bolt.MemoryDataset
+    `dataset` : bolt.MemoryDataset
         The unlabeled data set.
     `auxtask` : list
         A list of tuples; each tuple contains a set of features
         which comprise the task.
-    
     """
 
-    def __init__(self, k, ds, auxtasks, classifier_trainer, training_strategy):
+    def __init__(self, k, dataset, auxtasks, classifier_trainer,
+                 training_strategy):
         if k < 1 or k > len(auxtasks):
-	    raise Error("0 < k < m")
-	self.ds = ds
-	self.auxtasks = [task if isinstance(task, tuple) else (task,)
+            raise Error("0 < k < m")
+        self.dataset = dataset
+        self.auxtasks = [task if isinstance(task, tuple) else (task,)
                          for task in auxtasks]
-	self.n = ds.n
-	self.dim = ds.dim
-	self.k = k
-	self.classifier_trainer = classifier_trainer
-	self.training_strategy = training_strategy
-	self.create_inverted_index()
+        self.n = dataset.n
+        self.dim = dataset.dim
+        self.k = k
+        self.classifier_trainer = classifier_trainer
+        self.training_strategy = training_strategy
+        self.create_inverted_index()
 
     @timeit
     def create_inverted_index(self):
-	iidx = defaultdict(list)
-	fid_task_map = defaultdict(list)
-	for i, task in enumerate(self.auxtasks):
+        iidx = defaultdict(list)
+        fid_task_map = defaultdict(list)
+        for i, task in enumerate(self.auxtasks):
             for fx in task:
                 fid_task_map[fx].append(i)
-		
-	for i, x in enumerate(self.ds.iterinstances()):
-	    for fid, fval in x:
-		if fid in fid_task_map:
-		    for task_id in fid_task_map[fid]:
-			iidx[task_id].append(i)
 
-	iidx = dict((task_id, np.unique(np.array(occurances))) for task_id,
+        for i, x in enumerate(self.dataset.iterinstances()):
+            for fid, fval in x:
+                if fid in fid_task_map:
+                    for task_id in fid_task_map[fid]:
+                        iidx[task_id].append(i)
+
+        iidx = dict((task_id, np.unique(np.array(occurances))) for task_id,
                     occurances in iidx.iteritems())
-	self.inverted_index = iidx
-	
+        self.inverted_index = iidx
+
     @timeit
     def learn(self):
-	"""
-	Learns the structural parameter theta from the auxiliary tasks.
-	"""
-	W = self.training_strategy.train_aux_classifiers(self.ds, self.auxtasks,
-							 self.classifier_trainer,
-							 inverted_index=self.inverted_index)
-	density = W.nnz / float(W.shape[0]*W.shape[1])
-	print "density: %.4f" % density
-	Ut, s, Vt = sparsesvd.sparsesvd(W, self.k)
-	print "Ut.shape = (%d,%d)" % Ut.shape
-	self.thetat = Ut.T	
+        """
+        Learns the structural parameter theta from the auxiliary tasks.
+        """
+        W = self.training_strategy.train_aux_classifiers(self.dataset, self.auxtasks,
+                                                         self.classifier_trainer,
+                                                         inverted_index=self.inverted_index)
+        density = W.nnz / float(W.shape[0] * W.shape[1])
+        print "density: %.4f" % density
+        Ut, s, Vt = sparsesvd.sparsesvd(W, self.k)
+        print "Ut.shape = (%d,%d)" % Ut.shape
+        self.thetat = Ut.T
+
 
 def project_instance_dense(x, thetat):
-    tmp = np.zeros((thetat.shape[1],), dtype = np.float64)
+    tmp = np.zeros((thetat.shape[1],), dtype=np.float64)
     for j, v in x:
-	tmp += v * thetat[j]
+        tmp += v * thetat[j]
     return tmp
 
-def project(ds, thetat, dense = True):
+
+def project(dataset, thetat, dense=True):
     """Projects the `bolt.io.Dataset` onto the feature space
     induced by `thetat`.
 
     If `dense` is True it returns a new numpy array (a design matrix);
-    else it returns a new `bolt.io.MemoryDataset`. 
+    else it returns a new `bolt.io.MemoryDataset`.
     """
     dim, k = thetat.shape
-    ds_prime = np.empty((ds.n, k), dtype = np.float64)
-    for i, x in enumerate(ds.instances):
-	ds_prime[i] = project_instance_dense(x, thetat)
+    dataset_prime = np.empty((dataset.n, k), dtype=np.float64)
+    for i, x in enumerate(dataset.instances):
+        dataset_prime[i] = project_instance_dense(x, thetat)
     if not dense:
-	instances = to_sparse_bolt(ds_prime)
-	dim = k
-	ds_prime = bolt.io.MemoryDataset(dim, instances, ds.labels)
-	ds_prime._idx = ds._idx
-    return ds_prime
-
-
+        instances = to_sparse_bolt(dataset_prime)
+        dim = k
+        dataset_prime = bolt.io.MemoryDataset(dim, instances, dataset.labels)
+        dataset_prime._idx = dataset._idx
+    return dataset_prime

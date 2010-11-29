@@ -30,7 +30,8 @@ class ASO(object):
         self.vocabulary = vocabulary
         self.tags = tags
         self.use_eph = use_eph
-        self.fidx_map = dict([(fname, i) for i, fname in enumerate(vocabulary)])
+        self.fidx_map = dict([(fname, i) for i, fname
+                              in enumerate(vocabulary)])
         self.tidx_map = dict([(tag, i) for i, tag in enumerate(tags)])
         self.tag_map = dict([(i, t) for i, t in enumerate(tags)])
 
@@ -45,7 +46,7 @@ class ASO(object):
     def create_aux_tasks(self, dataset, m):
         """Select the m most frequent left, right, and current words.
 
-        TODO: mask all features derived from the left, right, and current word. 
+        TODO: mask all features derived from the left, right, and current word.
 
         Parameters
         ----------
@@ -100,13 +101,15 @@ class ASO(object):
         # TODO apply SVD by feature type.
         struct_learner.learn()
         
-
         # TODO post-process embedding
         # - project unlabeled data
         # - compute and store mean and std
 
         # store data in model
-        self.struct_learner = struct_learner
+        print
+        print "size of theta: %.2f MB" % (struct_learner.thetat.nbytes / 1024.0 / 1024.0)
+        print
+        self.thetat = struct_learner.thetat
         self.m = m
         self.k = k
         return self
@@ -120,7 +123,7 @@ def train_args_parser():
     parser = optparse.OptionParser(usage="%prog [options] " \
                                    "train_file unlabeled_file model_file",
                                    version="%prog " + __version__,
-                                   description = description)
+                                   description=description)
     parser.add_option("-v", "--verbose",
                       dest="verbose",
                       help="verbose output",
@@ -129,19 +132,21 @@ def train_args_parser():
                       type="int")
     parser.add_option("-f", "--feature-module",
                       dest="feature_module",
-                      help="The module in the features package containing the `fd` and `hd` functions. [Default: %default].",
+                      help="The module in the features package containing the" \
+                      " `fd` and `hd` functions. [Default: %default].",
                       default="rr09",
                       metavar="str",
                       type="str")
     parser.add_option("-m",
                       dest="m",
-                      help="Number of auxiliary tasks from left, right, and current word to create. ",
+                      help="Number of auxiliary tasks from left, right, " \
+                      "and current word to create. ",
                       default=1000,
                       metavar="int",
                       type="int")
     parser.add_option("-k",
                       dest="k",
-                      help="Dimensionality of the shared representation.", 
+                      help="Dimensionality of the shared representation.",
                       default=50,
                       metavar="int",
                       type="int")
@@ -160,7 +165,7 @@ def train_args_parser():
     parser.add_option("--min-count",
                       dest="minc",
                       help="min number of occurances.",
-                      default=0,
+                      default=1,
                       metavar="int",
                       type="int")
     parser.add_option("--max-unlabeled",
@@ -201,7 +206,7 @@ def train():
     f_train = argv[0]
     f_unlabeled = argv[1]
     f_model = argv[2]
-    
+
     # get feature extraction module
     try:
         import_path = "nut.ner.features.%s" % options.feature_module
@@ -222,20 +227,10 @@ def train():
                                        use_eph=options.use_eph)
     print "|V|:", len(V)
     print "|T|:", len(T)
-    print "T:", T
     print
-    
+    sys.exit(-1)
     model = ASO(fd, hd, V, T, use_eph=options.use_eph)
     model.learn(unlabeled_reader, options.m, options.k)
 
     # dump the model
-    if f_model.endswith(".gz"):
-        import gzip
-        f = gzip.open(f_model, mode="wb")
-    elif f_model.endswith(".bz2"):
-        import bz2
-        f = bz2.BZ2File(f_model, mode="w")
-    else:
-        f = open(f_model)
-    pickle.dump(model, f)
-    f.close()
+    compressed_dump(f_model, model)

@@ -14,22 +14,23 @@ from __future__ import division
 import sys
 import numpy as np
 import math
-import cPickle as pickle
 import optparse
 import bolt
 
-from itertools import islice,ifilter
+from itertools import islice, ifilter
 
 from ..structlearn import pivotselection
 from ..structlearn import util
 from ..structlearn import structlearn
 from ..structlearn import auxtrainer
 from ..structlearn import auxstrategy
+from ..io import compressed_dump, compressed_load
 from ..bow import vocabulary, disjoint_voc, load
-from ..util import timeit, trace
+from ..util import timeit
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __version__ = "0.1"
+
 
 class CLSCLModel(object):
     """
@@ -39,7 +40,7 @@ class CLSCLModel(object):
     thetat : array, shape = [|voc|, k]
         Theta transposed.
     mean : array, shape = [|voc|]
-        Mean value of each feature. 
+        Mean value of each feature.
     std : array, shape = [|voc|]
         Standard deviation of each feature.
         Used to post-process the projection.
@@ -52,7 +53,7 @@ class CLSCLModel(object):
     `thetat` : array, shape = [|voc|, k]
         Theta transposed.
     `mean` : array, shape = [|voc|]
-        Mean value of each feature. 
+        Mean value of each feature.
     `std` : array, shape = [|voc|]
         Standard deviation of each feature.
         Used to post-process the projection.
@@ -66,17 +67,17 @@ class CLSCLModel(object):
 
     """
     def __init__(self, thetat, mean=None, std=None, avg_norm=None):
-	self.thetat = thetat
-	self.s_voc = None
-	self.t_voc = None
-	self.mean = mean
-	self.std = std
-	self.avg_norm = avg_norm
+        self.thetat = thetat
+        self.s_voc = None
+        self.t_voc = None
+        self.mean = mean
+        self.std = std
+        self.avg_norm = avg_norm
 
     @timeit
     def project(self, ds):
-	"""Projects the given dataset onto the space induces by `self.thetat`
-	and postprocesses the projection using `mean`, `std`, and `avg_norm`.
+        """Projects the given dataset onto the space induces by `self.thetat`
+        and postprocesses the projection using `mean`, `std`, and `avg_norm`.
 
         Parameters
         ----------
@@ -86,22 +87,23 @@ class CLSCLModel(object):
         Returns
         -------
         bolt.io.MemoryDataset
-	    A new bolt.io.MemoryDataset equal to `ds`
-            but contains projected feature vectors. 
-	"""
-	dense_instances = structlearn.project(ds, self.thetat, dense = True)
-	
-	if self.mean != None and self.std != None:
-	    standardize(dense_instances, self.mean, self.std)
-	if self.avg_norm != None:
-	    dense_instances /= self.avg_norm
+            A new bolt.io.MemoryDataset equal to `ds`
+            but contains projected feature vectors.
+        """
+        dense_instances = structlearn.project(ds, self.thetat, dense=True)
 
-	instances = structlearn.to_sparse_bolt(dense_instances)
-	dim = self.thetat.shape[1]
-	labels = ds.labels
-	new_ds = bolt.io.MemoryDataset(dim, instances, labels)
-	new_ds._idx = ds._idx
-	return new_ds
+        if self.mean != None and self.std != None:
+            standardize(dense_instances, self.mean, self.std)
+        if self.avg_norm != None:
+            dense_instances /= self.avg_norm
+
+        instances = structlearn.to_sparse_bolt(dense_instances)
+        dim = self.thetat.shape[1]
+        labels = ds.labels
+        new_ds = bolt.io.MemoryDataset(dim, instances, labels)
+        new_ds._idx = ds._idx
+        return new_ds
+
 
 class CLSCLTrainer(object):
     """Trainer class that creates CLSCLModel objects.
@@ -120,9 +122,9 @@ class CLSCLTrainer(object):
     pivotselector : PivotTranslator
         Translates words from the source to the target vocabulary (1-1).
     trainer : AuxTrainer
-        Trainer for the pivot classifiers. 
+        Trainer for the pivot classifiers.
     strategy : AuxStrategy
-        Processing strategy for the pivot classifier training. 
+        Processing strategy for the pivot classifier training.
 
     Attributes
     ----------
@@ -138,20 +140,20 @@ class CLSCLTrainer(object):
     `pivotselector` : PivotTranslator
         Translates words from the source to the target vocabulary (1-1).
     `trainer` : AuxTrainer
-        Trainer for the pivot classifiers. 
+        Trainer for the pivot classifiers.
     `strategy` : AuxStrategy
-        Processing strategy for the pivot classifier training. 
+        Processing strategy for the pivot classifier training.
     """
 
     def __init__(self, s_train, s_unlabeled, t_unlabeled,
-		 pivotselector, pivottranslator, trainer, strategy):
-	self.s_train = s_train
-	self.s_unlabeled = s_unlabeled
-	self.t_unlabeled = t_unlabeled
-	self.pivotselector = pivotselector
-	self.pivottranslator = pivottranslator
-	self.trainer = trainer
-	self.strategy = strategy
+                 pivotselector, pivottranslator, trainer, strategy):
+        self.s_train = s_train
+        self.s_unlabeled = s_unlabeled
+        self.t_unlabeled = t_unlabeled
+        self.pivotselector = pivotselector
+        self.pivottranslator = pivottranslator
+        self.trainer = trainer
+        self.strategy = strategy
 
     @timeit
     def select_pivots(self, m, phi):
@@ -160,7 +162,8 @@ class CLSCLTrainer(object):
         the `pivotselector` member. Than, the source words are translated
         using the `pivottranslator` member. Finally, the support condition
         is enforced by eliminating those pivot candidates which occur less
-        then `phi` times in the unlabeled data. At most `m` pivots are selected.
+        then `phi` times in the unlabeled data. At most `m` pivots are
+        selected.
 
         Parameter
         ---------
@@ -175,22 +178,21 @@ class CLSCLTrainer(object):
             A list of tuples (w_s, w_t) where w_s is the vocabulary
             index of the source pivot word and w_t is the index of
             the target word.
-            The number of pivots might be smaller than `m`. 
-        
+            The number of pivots might be smaller than `m`.
         """
-	vp = self.pivotselector.select(self.s_train)
-	candidates = ifilter(lambda x: x[1] != None,
+        vp = self.pivotselector.select(self.s_train)
+        candidates = ifilter(lambda x: x[1] != None,
                              ((ws, self.pivottranslator[ws])
                               for ws in vp))
-	counts = util.count(self.s_unlabeled, self.t_unlabeled)
-	pivots = ((ws,wt) for ws, wt in candidates \
-			 if counts[ws] >= phi and counts[wt] >= phi)
-	pivots = [pivot for pivot in islice(pivots,m)]
-	#terms = [(self.s_ivoc[ws],self.t_ivoc[wt]) for ws,wt in pivots]
-	#for term in terms[:50]:
-	#    print term
-	
-	return pivots	
+        counts = util.count(self.s_unlabeled, self.t_unlabeled)
+        pivots = ((ws, wt) for ws, wt in candidates \
+                         if counts[ws] >= phi and counts[wt] >= phi)
+        pivots = [pivot for pivot in islice(pivots, m)]
+        #terms = [(self.s_ivoc[ws],self.t_ivoc[wt]) for ws,wt in pivots]
+        #for term in terms[:50]:
+        #    print term
+
+        return pivots
 
     def train(self, m, phi, k):
         """Trains the model using parameters `m`, `phi`, and `k`.
@@ -206,23 +208,22 @@ class CLSCLTrainer(object):
 
         Returns
         -------
-        CLSCLModel
-            The trained model. 
+        model : CLSCLModel
+            The trained model.
 
         """
-	pivots = self.select_pivots(m, phi)
-	print("|pivots| = %d" % len(pivots))
-	ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
-					  self.t_unlabeled))
-	ds.shuffle(9)
-	struct_learner = structlearn.StructLearner(k, ds, pivots,
-						   self.trainer,
-						   self.strategy)
-	struct_learner.learn()
-	self.project(struct_learner.thetat, verbose=1)
-	return CLSCLModel(struct_learner.thetat, mean=self.mean,
-			  std=self.std, avg_norm=self.avg_norm)
-	
+        pivots = self.select_pivots(m, phi)
+        print("|pivots| = %d" % len(pivots))
+        ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
+                                          self.t_unlabeled))
+        ds.shuffle(9)
+        struct_learner = structlearn.StructLearner(k, ds, pivots,
+                                                   self.trainer,
+                                                   self.strategy)
+        struct_learner.learn()
+        self.project(struct_learner.thetat, verbose=1)
+        return CLSCLModel(struct_learner.thetat, mean=self.mean,
+                          std=self.std, avg_norm=self.avg_norm)
 
     @timeit
     def project(self, thetat, verbose=1):
@@ -234,96 +235,99 @@ class CLSCLTrainer(object):
         (0 mean, unit variance; where mean and variance are estimated from
         labeled and unlabeled data) and b) scaling by a factor beta
         such that the average L2 norm of the training examples
-        equals 1. 
+        equals 1.
         """
-	s_train = structlearn.project(self.s_train, thetat, dense=True)
-	s_unlabeled = structlearn.project(self.s_unlabeled, thetat,
-					  dense=True)
-	t_unlabeled = structlearn.project(self.t_unlabeled, thetat,
-					  dense=True)
+        s_train = structlearn.project(self.s_train, thetat, dense=True)
+        s_unlabeled = structlearn.project(self.s_unlabeled, thetat,
+                                          dense=True)
+        t_unlabeled = structlearn.project(self.t_unlabeled, thetat,
+                                          dense=True)
 
-	data = np.concatenate((s_train, s_unlabeled, t_unlabeled)) 
-	mean = data.mean(axis=0)
-	std  = data.std(axis=0)
-	self.mean, self.std = mean, std
-	standardize(s_train, mean, std)
-	
-	norms = np.sqrt((s_train * s_train).sum(axis=1))
-	avg_norm = np.mean(norms)
-	self.avg_norm = avg_norm
-	s_train /= avg_norm
+        data = np.concatenate((s_train, s_unlabeled, t_unlabeled))
+        mean = data.mean(axis=0)
+        std = data.std(axis=0)
+        self.mean, self.std = mean, std
+        standardize(s_train, mean, std)
 
-	dim = thetat.shape[0]
-	self.s_train.instances = structlearn.to_sparse_bolt(s_train)
-	self.s_train.dim = dim
+        norms = np.sqrt((s_train * s_train).sum(axis=1))
+        avg_norm = np.mean(norms)
+        self.avg_norm = avg_norm
+        s_train /= avg_norm
 
-	del self.s_unlabeled
-	del self.t_unlabeled	
+        dim = thetat.shape[0]
+        self.s_train.instances = structlearn.to_sparse_bolt(s_train)
+        self.s_train.dim = dim
+
+        del self.s_unlabeled
+        del self.t_unlabeled
+
 
 def standardize(docterms, mean, std, alpha=1.0):
     """Standardize document-term matrix `docterms`
     to 0 mean and variance 1. `alpha` is an optional
-    scaling factor. 
+    scaling factor.
     """
     docterms -= mean
     docterms /= std
     docterms *= alpha
 
+
 class DictTranslator(object):
     """Pivot translation oracle backed by a bilingual
-    dictionary represented as a tab separated text file. 
+    dictionary represented as a tab separated text file.
     """
 
     def __init__(self, dictionary, s_ivoc, t_voc):
-	self.dictionary = dictionary
-	self.s_ivoc = s_ivoc
-	self.t_voc = t_voc
-	print("debug: DictTranslator contains " \
+        self.dictionary = dictionary
+        self.s_ivoc = s_ivoc
+        self.t_voc = t_voc
+        print("debug: DictTranslator contains " \
               "%d translations." % len(dictionary))
 
     def __getitem__(self, ws):
-	try:
-	    wt = self.normalize(self.dictionary[self.s_ivoc[ws]])
-	except KeyError:
-	    wt = None
-	return wt
+        try:
+            wt = self.normalize(self.dictionary[self.s_ivoc[ws]])
+        except KeyError:
+            wt = None
+        return wt
 
     def translate(self, ws):
-	return self[ws]
+        return self[ws]
 
     def normalize(self, wt):
-	wt = wt.encode("utf-8") if isinstance(wt,unicode) else wt
-	wt = wt.split(" ")[0].lower()
-	if wt in self.t_voc:
-	    return self.t_voc[wt]
-	else:
-	    return None
-	
+        wt = wt.encode("utf-8") if isinstance(wt, unicode) else wt
+        wt = wt.split(" ")[0].lower()
+        if wt in self.t_voc:
+            return self.t_voc[wt]
+        else:
+            return None
+
     @classmethod
     def load(cls, fname, s_ivoc, t_voc):
-	dictionary = []
-	with open(fname) as f:
-	    for i, line in enumerate(f):
-		ws, wt = line.rstrip().split("\t")
-		dictionary.append((ws, wt))
-	dictionary = dict(dictionary)
-	return DictTranslator(dictionary, s_ivoc, t_voc)
+        dictionary = []
+        with open(fname) as f:
+            for i, line in enumerate(f):
+                ws, wt = line.rstrip().split("\t")
+                dictionary.append((ws, wt))
+        dictionary = dict(dictionary)
+        return DictTranslator(dictionary, s_ivoc, t_voc)
+
 
 def train_args_parser():
     """Create argument and option parser for the
-    training script. 
+    training script.
     """
-    description = """Prefixes `s_` and `t_` refer to source and target language, resp.
-Train and unlabeled files are expected to be in Bag-of-Words format.
+    description = """Prefixes `s_` and `t_` refer to source and target language
+    , resp. Train and unlabeled files are expected to be in Bag-of-Words format.
     """
     parser = optparse.OptionParser(usage="%prog [options] " \
                                    "s_lang t_lang s_train_file " \
                                    "s_unlabeled_file t_unlabeled_file " \
                                    "dict_file model_file",
                                    version="%prog " + __version__,
-                                   description = description)
-    
-    parser.add_option("-v","--verbose",
+                                   description=description)
+
+    parser.add_option("-v", "--verbose",
                       dest="verbose",
                       help="verbose output",
                       default=1,
@@ -359,14 +363,14 @@ Train and unlabeled files are expected to be in Bag-of-Words format.
                       metavar="int",
                       type="int")
     return parser
-    
-    
+
+
 def train():
     """Training script for CLSCL.
 
     FIXME: works for binary classification only.
     TODO: multi-class classification.
-    TODO: different translators. 
+    TODO: different translators.
 
     Usage: ./clscl_train slang tlang strain sunlabeled tunlabeled dict out
     """
@@ -374,7 +378,7 @@ def train():
     options, argv = parser.parse_args()
     if len(argv) != 7:
         parser.error("incorrect number of arguments (use `--help` for help).")
-        
+
     slang = argv[0]
     tlang = argv[1]
 
@@ -385,14 +389,14 @@ def train():
 
     # Create vocabularies
     s_voc = vocabulary(fname_s_train, fname_s_unlabeled,
-		       mindf=2,
+                       mindf=2,
                        maxlines=options.max_unlabeled)
     t_voc = vocabulary(fname_t_unlabeled,
-		       mindf=2,
+                       mindf=2,
                        maxlines=options.max_unlabeled)
-    s_voc, t_voc, dim = disjoint_voc(s_voc,t_voc)
-    s_ivoc = dict([(idx,term) for term, idx in s_voc.items()])
-    t_ivoc = dict([(idx,term) for term, idx in t_voc.items()])
+    s_voc, t_voc, dim = disjoint_voc(s_voc, t_voc)
+    s_ivoc = dict([(idx, term) for term, idx in s_voc.items()])
+    t_ivoc = dict([(idx, term) for term, idx in t_voc.items()])
     print("|V_S| = %d\n|V_T| = %d" % (len(s_voc), len(t_voc)))
     print("  |V| = %d" % dim)
 
@@ -409,24 +413,22 @@ def train():
     # Load dictionary
     translator = DictTranslator.load(fname_dict, s_ivoc, t_voc)
 
-    # 
     pivotselector = pivotselection.MISelector()
     trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85,
                                            10**6)
     strategy = auxstrategy.HadoopTrainingStrategy()
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
-				 t_unlabeled, pivotselector,
-				 translator, trainer,
-				 strategy)
+                                 t_unlabeled, pivotselector,
+                                 translator, trainer,
+                                 strategy)
     clscl_trainer.s_ivoc = s_ivoc
     clscl_trainer.t_ivoc = t_ivoc
     model = clscl_trainer.train(options.m, options.phi, options.k)
-    
+
     model.s_voc = s_voc
     model.t_voc = t_voc
-    f = open(argv[6], "wb+")
-    pickle.dump(model, f)
-    f.close()
+    compressed_dump(argv[6], model)
+
 
 def predict():
     """Prediction script for CLSCL.
@@ -444,28 +446,25 @@ def predict():
     fname_t_test = argv[2]
     reg = float(argv[3])
 
-    f = open(fname_model, "rb")
-    CLSCLModel = pickle.load(f)
-    f.close()
+    model = compressed_load(fname_model)
 
-    s_voc = CLSCLModel.s_voc
-    t_voc = CLSCLModel.t_voc
+    s_voc = model.s_voc
+    t_voc = model.t_voc
     dim = len(s_voc) + len(t_voc)
     print("|V_S| = %d\n|V_T| = %d" % (len(s_voc), len(t_voc)))
     print("|V| = %d" % dim)
 
     s_train = load(fname_s_train, s_voc, dim)
-    t_test  = load(fname_t_test, t_voc, dim)
-    
-    cl_train = CLSCLModel.project(s_train)
-    cl_test  = CLSCLModel.project(t_test)
-    
+    t_test = load(fname_t_test, t_voc, dim)
+
+    cl_train = model.project(s_train)
+    cl_test = model.project(t_test)
+
     epochs = int(math.ceil(10**6 / cl_train.n))
-    model = bolt.LinearModel(cl_train.dim, biasterm = False)
+    model = bolt.LinearModel(cl_train.dim, biasterm=False)
     loss = bolt.ModifiedHuber()
-    sgd = bolt.SGD(loss, reg, epochs = epochs, norm = 2)
+    sgd = bolt.SGD(loss, reg, epochs=epochs, norm=2)
     cl_train.shuffle(1)
-    sgd.train(model, cl_train, verbose = 0, shuffle = False)
+    sgd.train(model, cl_train, verbose=0, shuffle=False)
     acc = 100.0 - bolt.eval.errorrate(model, cl_test)
     print "ACC: %.2f" % acc
-    
