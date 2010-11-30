@@ -3,10 +3,17 @@
 # Author: Peter Prettenhofer <peter.prettenhofer@gmail.com>
 #
 # License: BSD Style
+"""Alternating Structural Optimization for Named Entity Recognition.
+
+This module implements Alternating Structural Optimization (ASO), a semi-
+supervised learning technique proposed by Ando and Zhang (2005) for
+named entity recognition (NER).
+"""
 
 import sys
 import optparse
 import numpy as np
+import re
 
 from collections import defaultdict
 from time import time
@@ -39,10 +46,20 @@ class ASO(object):
     def preselect_tasks(self):
         preselection = set()
         for fx in self.fidx_map:
-            if fx.startswith("w=") or fx.startswith("pre_w=") \
-               or fx.startswith("post_w="):
+            if fx.startswith("word_cur=") or fx.startswith("word_pre=") \
+               or fx.startswith("word_post="):
                 preselection.add(self.fidx_map[fx])
         return preselection
+
+    def create_masks(self, tokens=["pre", "cur", "post"]):
+        pattern = re.compile("_|=")
+        masks = {}
+        for token in tokens:
+            mask = set((i for i, fx in enumerate(self.fidx_map.iterkeys())
+                                if token in pattern.split(fx)[1]))
+            masks[token] = np.array(mask)
+        return masks
+
 
     def create_aux_tasks(self, dataset, m):
         """Select the m most frequent left, right, and current words.

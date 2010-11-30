@@ -33,7 +33,7 @@ CLSCL
 ~~~~~
 
 An implementation of Cross-Language Structural Correspondence Learning (CLSCL) 
-for cross-language text classification. See [Prettenhofer and Stein, 2009] for 
+for cross-language text classification. See [Prettenhofer and Stein, 2010] for 
 a detailed description. 
 
 The data for cross-language sentiment classification that has been used in the above
@@ -46,7 +46,7 @@ Training script for CLSCL. See ./clscl_train --help for further details.
 
 Usage::
 
-    $ ./clscl_train en de cls-acl10-processed/en/books/train.processed cls-acl10-processed/en/books/unlabeled.processed cls-acl10-processed/de/books/unlabeled.processed cls-acl10-processed/dict/en_de_dict.txt model.pkl --phi 30 --max-unlabeled=50000 -k 100 -m 450
+    $ ./clscl_train en de cls-acl10-processed/en/books/train.processed cls-acl10-processed/en/books/unlabeled.processed cls-acl10-processed/de/books/unlabeled.processed cls-acl10-processed/dict/en_de_dict.txt model.bz2 --phi 30 --max-unlabeled=50000 -k 100 -m 450
     |V_S| = 64682
     |V_T| = 106024
       |V| = 170706
@@ -70,7 +70,7 @@ Prediction script for CLSCL.
 
 Usage::
 
-    $ ./clscl_predict cls-acl10-processed/en/books/train.processed model.pkl cls-acl10-processed/de/books/test.processed 0.01
+    $ ./clscl_predict cls-acl10-processed/en/books/train.processed model.bz2 cls-acl10-processed/de/books/test.processed 0.01
     |V_S| = 64682
     |V_T| = 106024
     |V| = 170706
@@ -90,8 +90,8 @@ ner_train
 
 Training script for NER. See ./ner_train --help for further details. 
 
-To train a conditional markov model with a greedy left-to-right decoder, the feature template of 
-[Rationov & Roth, 2009] and extended prediction history (see [Ratinov & Roth, 2009]) use::
+To train a conditional markov model with a greedy left-to-right decoder, the feature templates 
+of [Rationov & Roth, 2009] and extended prediction history (see [Ratinov & Roth, 2009]) use::
 
     ./ner_train clner/en/conll03/train.iob2 model_rr09.bz2 -f rr09 -r 0.00001 -E 100 --shuffle --eph 
 

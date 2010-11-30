@@ -15,6 +15,7 @@ import numpy as np
 import bolt
 import sparsesvd
 from collections import defaultdict
+from itertools import chain
 
 from ..util import timeit, trace
 
@@ -119,8 +120,9 @@ def project_instance_dense(x, thetat):
     return tmp
 
 
+@timeit
 def project(dataset, thetat, dense=True):
-    """Projects the `bolt.io.Dataset` onto the feature space
+    """Projects the `bolt.io.MemoryDataset` onto the feature space
     induced by `thetat`.
 
     If `dense` is True it returns a new numpy array (a design matrix);
@@ -136,3 +138,61 @@ def project(dataset, thetat, dense=True):
         dataset_prime = bolt.io.MemoryDataset(dim, instances, dataset.labels)
         dataset_prime._idx = dataset._idx
     return dataset_prime
+
+
+@timeit
+def concat_datasets(a, b):
+    """Concat two bolt.io.MemoryDatasets as two views.
+
+    WARNING: this method does not take _idx into account and
+    resets c._idx to `arange(c.n)`.
+
+    Paramters
+    ---------
+    a : bolt.io.MemoryDataset
+        The first view
+    b : bolt.io.MemoryDataset
+        The second view
+
+    Returns
+    -------
+    c : bolt.io.MemoryDataset
+        The concatenation of a and b. The features of b
+        are shifted by a.dim.
+
+    Precondition: a.n == b.n
+    """
+    assert a.n == b.n
+    dim_a = a.dim
+    res = np.empty((a.n,), dtype=np.object)
+    for i in range(a.n):
+        instance_a = a.instances[i]
+        instance_b = b.instances[i]
+        res[i] = concat_instances(instance_a, instance_b,
+                                  offset=dim_a)
+    c = bolt.io.MemoryDataset(a.dim + b.dim, res, a.labels)
+    return c
+
+
+def concat_instances(instance_a, instance_b, offset):
+    """Concats two sparse instances; shifts the feature idx
+    of the second instance by `offset`.
+
+    Parameters
+    ----------
+    instance_a : array, dtype=bolt.sparsedtype
+        The first instance.
+    instance_b : array, dtype=bolt.sparsedtype
+        The second instance.
+    offset : int
+        The feature index offset for the second
+        instance.
+
+    Returns
+    -------
+    instance_c : array, dtype=bolt.sparsedtype
+        The concatenation of a and b.
+    """
+    instance_b['f0'] += offset
+    return np.fromiter(chain(instance_a, instance_b),
+                             bolt.sparsedtype)

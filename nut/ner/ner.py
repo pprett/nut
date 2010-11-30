@@ -7,15 +7,18 @@
 import sys
 import optparse
 import numpy as np
-import cPickle as pickle
 
 from time import time
-from itertools import islice
+
 from ..io import conll, compressed_dump, compressed_load
 from ..tagger import tagger
 
 
 __version__ = "0.1"
+
+
+class Error(Exception):
+    pass
 
 
 def train_args_parser():
@@ -35,7 +38,8 @@ def train_args_parser():
                       type="int")
     parser.add_option("-f", "--feature-module",
                       dest="feature_module",
-                      help="The module in the features package containing the `fd` and `hd` functions. [Default: %default].",
+                      help="The module in the features package containing " \
+                      "the `fd` and `hd` functions. [Default: %default].",
                       default="rr09",
                       metavar="str",
                       type="str")
@@ -86,10 +90,11 @@ def train_args_parser():
                       default=False,
                       help="Use Extended Prediction History.")
     parser.add_option("--aso",
-                      action="store_true",
                       dest="aso",
                       default=False,
-                      help="Use Alternating Structural Optimization.")
+                      help="Give an Alternating Structural Optimization model.",
+                      metavar="str",
+                      type="str")
 
     return parser
 
@@ -101,9 +106,7 @@ def train():
     options, argv = parser.parse_args()
     if len(argv) != 2:
         parser.error("incorrect number of arguments (use `--help` for help).")
-    if options.aso:
-        if not options.funlabeled:
-            raise parser.error("specify unlabeled data with --unlabeled. ")
+
     # get filenames
     f_train = argv[0]
     f_model = argv[1]
@@ -121,16 +124,41 @@ def train():
     train_reader = conll.Conll03Reader(f_train, options.lang)
 
     if options.aso:
-        print "ASO not yet implemented."
-        sys.exit(-1)
+#        print "ASO not yet implemented."
+#        sys.exit(-1)
+        print "Loading ASO model...",
+        sys.stdout.flush()
+        aso_model = compressed_load(options.aso)
+        print "[done]"
 
-    
-    #model = tagger.AvgPerceptronTagger(fd, hd, verbose=options.verbose)
-    model = tagger.GreedySVMTagger(fd, hd, lang=options.lang,
+        # Create Tagger from ASOModel
+        # FIXME use aso_model.lang
+        model = tagger.GreedySVMTagger(aso_model.fd, aso_model.hd,
+                                       lang=options.lang,
+                                       verbose=options.verbose)
+        if options.use_eph != aso_model.use_eph:
+            raise Error("options.use_eph != aso_model.use_eph.")
+        model.V = aso_model.vocabulary
+        model.T = aso_model.tags
+        model.use_eph = aso_model.use_eph
+        # FIXME use aso_model.minc
+        model.minc = options.minc
+        model.fidx_map = aso_model.fidx_map
+        model.tidx_map = aso_model.tidx_map
+        model.tag_map = aso_model.tag_map
+
+        # turn ASO on and hand over theta
+        model.use_aso = True
+        model.thetat = aso_model.thetat
+
+    else:
+
+        #model = tagger.AvgPerceptronTagger(fd, hd, verbose=options.verbose)
+        model = tagger.GreedySVMTagger(fd, hd, lang=options.lang,
                                    verbose=options.verbose)
-    model.feature_extraction(train_reader, minc=options.minc,
-                             use_eph=options.use_eph)
-    
+        model.feature_extraction(train_reader, minc=options.minc,
+                                 use_eph=options.use_eph)
+
     model.train(train_reader, reg=options.reg, epochs=options.epochs,
                 shuffle=options.shuffle)
     if options.stats:
@@ -171,6 +199,7 @@ def predict():
     model = compressed_load(argv[0])
     print >> sys.stderr, "[done]"
     print >> sys.stderr, "use_eph: ", model.use_eph
+    print >> sys.stderr, "use_aso: ", model.use_aso
     test_reader = conll.Conll03Reader(argv[1], model.lang)
     if argv[2] != "-":
         f = open(argv[2], "w+")
