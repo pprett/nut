@@ -120,7 +120,7 @@ class ParallelTrainingStrategy(TrainingStrategy):
                 delayed(_train_aux_classifier)(i, auxtask,
                                                original_instances,
                                                dim, classifier_trainer,
-                                               None)
+                                               inverted_index[i])
             for i, auxtask in enumerate(auxtasks))
 
         for i, (fx_idxs, fx_vals) in res:
@@ -135,7 +135,7 @@ class ParallelTrainingStrategy(TrainingStrategy):
         return W.tocsc()
 
 def _train_aux_classifier(i, auxtask, original_instances, dim,
-                          classifier_trainer, inverted_index=None):
+                          classifier_trainer, occurances=None):
     """Trains a single auxiliary classifier.
 
     Parameters
@@ -163,11 +163,11 @@ def _train_aux_classifier(i, auxtask, original_instances, dim,
         second array holds the values.
     """
     instances = original_instances
-    if inverted_index is None:
+    if occurances is None:
         util.mask(instances, auxtask)
         labels = util.autolabel(instances, auxtask)
     else:
-        occurances = inverted_index[j]
+        #occurances = inverted_index[i]
         util.mask(instances[occurances], auxtask)
         labels = np.ones((instances.shape[0],), dtype=np.float32)
         labels *= -1.0
