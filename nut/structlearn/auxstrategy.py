@@ -107,6 +107,10 @@ class ParallelTrainingStrategy(TrainingStrategy):
     Trains the auxiliary classifiers using joblib.Parallel.
     """
 
+    def __init__(self, n_jobs=-1):
+        super(ParallelTrainingStrategy, self).__init__()
+        self.n_jobs = n_jobs
+
     @timeit
     def train_aux_classifiers(self, ds, auxtasks, classifier_trainer,
                               inverted_index=None):
@@ -116,7 +120,7 @@ class ParallelTrainingStrategy(TrainingStrategy):
         col = []
         original_instances = ds.instances[ds._idx]
         print "Run joblib.Parallel"
-        res = Parallel(n_jobs=-1, verbose=1)(
+        res = Parallel(n_jobs=self.n_jobs, verbose=1)(
                 delayed(_train_aux_classifier)(i, auxtask,
                                                original_instances,
                                                dim, classifier_trainer,

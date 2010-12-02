@@ -18,6 +18,7 @@ import optparse
 import bolt
 
 from itertools import islice, ifilter
+from functools import partial
 
 from ..structlearn import pivotselection
 from ..structlearn import util
@@ -356,7 +357,8 @@ def train_args_parser():
 
     parser.add_option("-r", "--pivot-reg",
                       dest="preg",
-                      help="regularization parameter lambda for the pivot classifiers.",
+                      help="regularization parameter lambda for " \
+                      "the pivot classifiers.",
                       default=0.00001,
                       metavar="float",
                       type="float")
@@ -375,7 +377,15 @@ def train_args_parser():
                       default="parallel",
                       metavar="str",
                       type="str")
-    
+
+    parser.add_option("--n-jobs",
+                      dest="n_jobs",
+                      help="The number of processes to fork." \
+                      "Only if strategy is 'parallel'.",
+                      default=-1,
+                      metavar="int",
+                      type="int")
+
     return parser
 
 
@@ -430,7 +440,8 @@ def train():
                                            10**6)
     strategy_factory = {"hadoop": auxstrategy.HadoopTrainingStrategy,
                         "serial": auxstrategy.SerialTrainingStrategy,
-                        "parallel": auxstrategy.ParallelTrainingStrategy}
+                        "parallel": partial(auxstrategy.ParallelTrainingStrategy,
+                                            n_jobs=options.n_jobs)}
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
                                  t_unlabeled, pivotselector,
                                  translator, trainer,
