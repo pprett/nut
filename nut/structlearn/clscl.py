@@ -27,6 +27,7 @@ from ..structlearn import auxstrategy
 from ..io import compressed_dump, compressed_load
 from ..bow import vocabulary, disjoint_voc, load
 from ..util import timeit
+from ..structlearn import standardize
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __version__ = "0.1"
@@ -262,16 +263,6 @@ class CLSCLTrainer(object):
         del self.t_unlabeled
 
 
-def standardize(docterms, mean, std, alpha=1.0):
-    """Standardize document-term matrix `docterms`
-    to 0 mean and variance 1. `alpha` is an optional
-    scaling factor.
-    """
-    docterms -= mean
-    docterms /= std
-    docterms *= alpha
-
-
 class DictTranslator(object):
     """Pivot translation oracle backed by a bilingual
     dictionary represented as a tab separated text file.
@@ -362,6 +353,29 @@ def train_args_parser():
                       default=30,
                       metavar="int",
                       type="int")
+
+    parser.add_option("-r", "--pivot-reg",
+                      dest="preg",
+                      help="regularization parameter lambda for the pivot classifiers.",
+                      default=0.00001,
+                      metavar="float",
+                      type="float")
+
+    parser.add_option("-a", "--alpha",
+                      dest="alpha",
+                      help="elastic net hyperparameter alpha.",
+                      default=0.85,
+                      metavar="float",
+                      type="float")
+
+    parser.add_option("--strategy",
+                      dest="strategy",
+                      help="The strategy to compute the pivot classifiers." \
+                      "Either 'serial' or 'parallel' [default] or 'hadoop'.",
+                      default="parallel",
+                      metavar="str",
+                      type="str")
+    
     return parser
 
 
@@ -371,8 +385,6 @@ def train():
     FIXME: works for binary classification only.
     TODO: multi-class classification.
     TODO: different translators.
-
-    Usage: ./clscl_train slang tlang strain sunlabeled tunlabeled dict out
     """
     parser = train_args_parser()
     options, argv = parser.parse_args()
@@ -398,7 +410,7 @@ def train():
     s_ivoc = dict([(idx, term) for term, idx in s_voc.items()])
     t_ivoc = dict([(idx, term) for term, idx in t_voc.items()])
     print("|V_S| = %d\n|V_T| = %d" % (len(s_voc), len(t_voc)))
-    print("  |V| = %d" % dim)
+    print("|V| = %d" % dim)
 
     # Load labeled and unlabeled data
     s_train = load(fname_s_train, s_voc, dim)
@@ -406,7 +418,7 @@ def train():
                        maxlines=options.max_unlabeled)
     t_unlabeled = load(fname_t_unlabeled, t_voc, dim,
                        maxlines=options.max_unlabeled)
-    print("    |s_train| = %d" % s_train.n)
+    print("|s_train| = %d" % s_train.n)
     print("|s_unlabeled| = %d" % s_unlabeled.n)
     print("|t_unlabeled| = %d" % t_unlabeled.n)
 
@@ -414,13 +426,15 @@ def train():
     translator = DictTranslator.load(fname_dict, s_ivoc, t_voc)
 
     pivotselector = pivotselection.MISelector()
-    trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85,
+    trainer = auxtrainer.ElasticNetTrainer(options.preg, options.alpha,
                                            10**6)
-    strategy = auxstrategy.HadoopTrainingStrategy()
+    strategy_factory = {"hadoop": auxstrategy.HadoopTrainingStrategy,
+                        "serial": auxstrategy.SerialTrainingStrategy,
+                        "parallel": auxstrategy.ParallelTrainingStrategy}
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
                                  t_unlabeled, pivotselector,
                                  translator, trainer,
-                                 strategy)
+                                 strategy_factory[options.strategy]())
     clscl_trainer.s_ivoc = s_ivoc
     clscl_trainer.t_ivoc = t_ivoc
     model = clscl_trainer.train(options.m, options.phi, options.k)

@@ -22,6 +22,10 @@ This package provides functionality for
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 
-from .structlearn import StructLearner, Error
-import auxtrainer
-import auxstrategy
+
+from .structlearn import StructLearner, project, concat_datasets, \
+     project_instance_dense, concat_instances, Error, standardize, \
+     to_sparse_bolt
+
+from . import auxtrainer
+from . import auxstrategy

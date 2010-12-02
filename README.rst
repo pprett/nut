@@ -46,22 +46,42 @@ Training script for CLSCL. See ./clscl_train --help for further details.
 
 Usage::
 
-    $ ./clscl_train en de cls-acl10-processed/en/books/train.processed cls-acl10-processed/en/books/unlabeled.processed cls-acl10-processed/de/books/unlabeled.processed cls-acl10-processed/dict/en_de_dict.txt model.bz2 --phi 30 --max-unlabeled=50000 -k 100 -m 450
+    $ ./clscl_train en de cls-acl10-processed/en/books/train.processed cls-acl10-processed/en/books/unlabeled.processed cls-acl10-processed/de/books/unlabeled.processed cls-acl10-processed/dict/en_de_dict.txt model.bz2 --phi 30 --max-unlabeled=50000 -k 100 -m 450 --strategy=parallel
+
+    vocabulary took 6.573 sec
+    vocabulary took 7.163 sec
     |V_S| = 64682
     |V_T| = 106024
-      |V| = 170706
+    |V| = 170706
+    load took 0.638 sec
+    load took 15.042 sec
+    load took 15.916 sec
     |s_train| = 2000
     |s_unlabeled| = 50000
     |t_unlabeled| = 50000
+    debug: DictTranslator contains 5012 translations.
+    mutualinformation took 5.624 sec
+    select_pivots took 7.197 sec
     |pivots| = 450
-    tempdir: /tmp/tmpI_2Ejw
-    processing Hadoop job... 
-    Cleaning local temp dir.
-    train_aux_classifiers took 259.719 sec
+    create_inverted_index took 59.353 sec
+    Run joblib.Parallel
+    [Parallel(n_jobs=-1)]: Done   1 out of 450 |elapsed:    9.1s remaining: 67.8min
+    [Parallel(n_jobs=-1)]: Done   5 out of 450 |elapsed:   15.2s remaining: 22.6min
+    [Parallel(n_jobs=-1)]: Done   9 out of 450 |elapsed:   21.8s remaining: 17.8min
+    [Parallel(n_jobs=-1)]: Done  13 out of 450 |elapsed:   30.2s remaining: 16.9min
+    [..]
+    [Parallel(n_jobs=-1)]: Done 445 out of 450 |elapsed: 14.4min remaining:    9.7s
+    [Parallel(n_jobs=-1)]: Done 449 out of 450 |elapsed: 14.5min remaining:    1.9s
+    train_aux_classifiers took 881.803 sec
     density: 0.1154
     Ut.shape = (100,170706)
-    learn took 281.216 sec
-    project took 142.993 sec
+    learn took 903.588 sec
+    project took 3.412 sec
+    project took 83.608 sec
+    project took 87.743 sec
+    project took 175.483 sec
+
+.. note:: If you have access to a hadoop cluster, you can use `--strategy=hadoop` to train the pivot classifiers even faster.
 
 clscl_predict
 ?????????????
@@ -111,8 +131,8 @@ References
 .. [#f2] http://pypi.python.org/pypi/sparsesvd/0.1.4
 .. [#f3] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
 
-[Prettenhofer, P. and Stein, B., 2010] `Cross-Language Text Classification using Structural Correspondence Learning <www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
+[Prettenhofer, P. and Stein, B., 2010] `Cross-Language Text Classification using Structural Correspondence Learning <http://www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
 
-[Ratinov, L. and Roth, D., 2009] `Design challenges and misconceptions in named entity recognition <www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
+[Ratinov, L. and Roth, D., 2009] `Design challenges and misconceptions in named entity recognition <http://www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
 
 

@@ -15,7 +15,6 @@ from collections import defaultdict
 from itertools import chain, repeat, izip
 from ..util import timeit
 from ..ner.nonlocal import ExtendedPredictionHistory
-from ..structlearn import structlearn
 
 
 @timeit
@@ -273,16 +272,13 @@ class GreedyTagger(Tagger):
             print "use ASO."
             print "projecting onto subspace...",
             sys.stdout.flush()
-            assert dataset.dim == self.thetat.shape[0]
-            dense_dataset = structlearn.project(dataset, self.thetat,
-                                                dense=False)
-            dataset = structlearn.concat_datasets(dataset, dense_dataset)
+            dataset = self.aso_model.project_dataset(dataset, usestandardize=True, beta=.4)
             print "[done]"
 
             # Update vocabulary and feature map with ASO features.
-            for i in range(self.thetat.shape[1]):
+            for i in range(self.aso_model.thetat.shape[1]):
                 self.V.append("aso_%d" % i)
-                self.fidx_map["aso_%d" % i] = self.thetat.shape[0] + i
+                self.fidx_map["aso_%d" % i] = self.aso_model.thetat.shape[0] + i
 
         print "------------------------------"
         print "Training".center(30)
@@ -319,11 +315,7 @@ class GreedyTagger(Tagger):
                     enc_features = chain(enc_features, encode_numeric(dist))
             instance = asinstance(enc_features, self.fidx_map)
             if self.use_aso:
-                proj_instance = structlearn.project_instance_dense(instance,
-                                                                   self.thetat)
-                proj_instance = bolt.dense2sparse(proj_instance)
-                instance = structlearn.concat_instances(instance,
-                                                        proj_instance)
+                instance = self.aso_model.project_instance(instance)
 
             p = self.glm(instance)
             tag = self.tag_map[p]

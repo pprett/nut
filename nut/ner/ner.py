@@ -6,7 +6,6 @@
 
 import sys
 import optparse
-import numpy as np
 
 from time import time
 
@@ -29,7 +28,7 @@ def train_args_parser():
     parser = optparse.OptionParser(usage="%prog [options] " \
                                    "train_file model_file",
                                    version="%prog " + __version__,
-                                   description = description)
+                                   description=description)
     parser.add_option("-v", "--verbose",
                       dest="verbose",
                       help="verbose output",
@@ -124,32 +123,31 @@ def train():
     train_reader = conll.Conll03Reader(f_train, options.lang)
 
     if options.aso:
-#        print "ASO not yet implemented."
-#        sys.exit(-1)
         print "Loading ASO model...",
         sys.stdout.flush()
         aso_model = compressed_load(options.aso)
         print "[done]"
 
         # Create Tagger from ASOModel
-        # FIXME use aso_model.lang
         model = tagger.GreedySVMTagger(aso_model.fd, aso_model.hd,
-                                       lang=options.lang,
+                                       lang=aso_model.lang,
                                        verbose=options.verbose)
         if options.use_eph != aso_model.use_eph:
             raise Error("options.use_eph != aso_model.use_eph.")
+        if options.lang != aso_model.lang:
+            raise Error("options.lang != aso_model.lang.")
+
         model.V = aso_model.vocabulary
         model.T = aso_model.tags
         model.use_eph = aso_model.use_eph
-        # FIXME use aso_model.minc
-        model.minc = options.minc
+        model.minc = aso_model.minc
         model.fidx_map = aso_model.fidx_map
         model.tidx_map = aso_model.tidx_map
         model.tag_map = aso_model.tag_map
 
-        # turn ASO on and hand over theta
+        # turn ASO on and hand over ASO model
         model.use_aso = True
-        model.thetat = aso_model.thetat
+        model.aso_model = aso_model
 
     else:
 

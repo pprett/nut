@@ -18,17 +18,9 @@ from collections import defaultdict
 from itertools import chain
 
 from ..util import timeit, trace
+from .auxstrategy import HadoopTrainingStrategy
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
-
-
-def to_sparse_bolt(X):
-    """Convert n x dim numpy array to sequence of bolt instances.
-    """
-    res = np.empty((len(X),), dtype=np.object)
-    for i,x in enumerate(X):
-        res[i] = bolt.dense2sparse(x)
-    return bolt.fromlist(res, np.object)
 
 
 class Error(Exception):
@@ -64,7 +56,11 @@ class StructLearner(object):
     `auxtask` : list
         A list of tuples; each tuple contains a set of features
         which comprise the task.
+    `inverted_index` : defaultdict(list)
+        An index which holds the ids of the positive instances for each task.
     """
+
+    inverted_index = None
 
     def __init__(self, k, dataset, auxtasks, classifier_trainer,
                  training_strategy):
@@ -78,7 +74,8 @@ class StructLearner(object):
         self.k = k
         self.classifier_trainer = classifier_trainer
         self.training_strategy = training_strategy
-        self.create_inverted_index()
+        if not isinstance(training_strategy, HadoopTrainingStrategy):
+            self.create_inverted_index()
 
     @timeit
     def create_inverted_index(self):
@@ -196,3 +193,22 @@ def concat_instances(instance_a, instance_b, offset):
     instance_b['f0'] += offset
     return np.fromiter(chain(instance_a, instance_b),
                              bolt.sparsedtype)
+
+
+def standardize(docterms, mean, std, beta=1.0):
+    """Standardize document-term matrix `docterms`
+    to 0 mean and variance 1. `beta` is an optional
+    scaling factor.
+    """
+    docterms -= mean
+    docterms /= std
+    docterms *= beta
+
+
+def to_sparse_bolt(X):
+    """Convert n x dim numpy array to sequence of bolt instances.
+    """
+    res = np.empty((len(X),), dtype=np.object)
+    for i, x in enumerate(X):
+        res[i] = bolt.dense2sparse(x)
+    return bolt.fromlist(res, np.object)

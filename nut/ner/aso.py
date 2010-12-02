@@ -14,6 +14,7 @@ import sys
 import optparse
 import numpy as np
 import re
+import bolt
 
 from collections import defaultdict
 from time import time
@@ -22,8 +23,8 @@ from itertools import islice
 from ..io import conll, compressed_dump, compressed_load
 from ..tagger import tagger
 from ..structlearn.pivotselection import FreqSelector
-from ..structlearn import StructLearner
-from ..structlearn import auxtrainer, auxstrategy
+
+from ..nut import structlearn
 
 
 __version__ = "0.1"
@@ -59,7 +60,6 @@ class ASO(object):
                                 if token in pattern.split(fx)[1]))
             masks[token] = np.array(mask)
         return masks
-
 
     def create_aux_tasks(self, dataset, m):
         """Select the m most frequent left, right, and current words.
@@ -121,13 +121,13 @@ class ASO(object):
         print "selected %d auxiliary tasks. " % len(aux_tasks)
         # self.print_tasks(aux_tasks)
         feature_type_splits = self.create_feature_type_splits()
-        trainer = auxtrainer.ElasticNetTrainer(0.00001, 0.85,
+        trainer = structlearn.auxtrainer.ElasticNetTrainer(0.00001, 0.85,
                                                10**6)
-        strategy = auxstrategy.HadoopTrainingStrategy()
-        struct_learner = StructLearner(k, dataset,
-                                       aux_tasks,
-                                       trainer,
-                                       strategy)
+        strategy = structlearn.auxstrategy.HadoopTrainingStrategy()
+        struct_learner = structlearn.StructLearner(k, dataset,
+                                                   aux_tasks,
+                                                   trainer,
+                                                   strategy)
         # learn the embedding
         # TODO apply SVD by feature type.
         struct_learner.learn()
@@ -135,6 +135,8 @@ class ASO(object):
         # TODO post-process embedding
         # - project unlabeled data
         # - compute and store mean and std
+        # FIXME Blitzer does this on training data only
+        # This could be done in ner.py!
 
         # store data in model
         print
@@ -145,6 +147,75 @@ class ASO(object):
         self.m = m
         self.k = k
         return self
+
+    def project_dataset(self, dataset, usestandardize=True, beta=1.0):
+        """Project dataset onto the subspace induced by theta
+        and concatenate the new features with the original
+        features.
+
+        Parameters
+        ----------
+        dataset : bolt.io.MemoryDataset
+            The dataset to project.
+        usestandardize : bool, True
+            Whether or not the projected features should be standardized.
+            If so mean and std are stored.
+        beta : float, 1.0
+            Scaling factor for the projected features.
+
+        Returns
+        -------
+        dataset : bolt.io.MemoryDataset
+            The new dataset with dataset.dim = dataset.dim
+            + thetat.shape[1]
+        """
+        assert dataset.dim == self.thetat.shape[0]
+        # get projection as dense array
+        proj_dataset = structlearn.project(dataset,
+                                           self.thetat,
+                                           dense=True)
+
+        if usestandardize:
+            mean = proj_dataset.mean(axis=0)
+            std = proj_dataset.std(axis=0)
+            self.mean, self.std = mean, std
+            self.beta = beta
+            structlearn.standardize(proj_dataset, mean, std, beta)
+
+        # from dense array to MemoryDataset
+        proj_dataset = structlearn.to_sparse_bolt(proj_dataset)
+        dim = self.thetat.shape[1]
+        labels = dataset.labels
+        proj_dataset = bolt.io.MemoryDataset(dim, proj_dataset, labels)
+        proj_dataset._idx = dataset._idx
+
+        # concat both MemoryDatasets
+        new_dataset = structlearn.concat_datasets(dataset, proj_dataset)
+
+        assert new_dataset.dim == dataset.dim + self.thetat.shape[1]
+        return new_dataset
+
+    def project_instance(self, instance, usestandardize=True):
+        """Project instance onto the subspace induced by theta
+        and concatenate the new features with the original
+        features.
+
+        Returns
+        -------
+        new_instance : array, dtype=bolt.sparsedtype
+            The new instance with size instance.shape[0] + thetat.shape[1]
+        """
+        proj_instance = structlearn.project_instance_dense(instance,
+                                                           self.thetat)
+        if usestandardize:
+            structlearn.standardize(proj_instance, self.mean, self.std,
+                                    self.beta)
+        proj_instance = bolt.dense2sparse(proj_instance)
+        new_instance = structlearn.concat_instances(instance,
+                                                    proj_instance,
+                                                    self.thetat.shape[0])
+        assert new_instance.shape[0] == instance.shape[0] + self.thetat.shape[1]
+        return new_instance
 
 
 def train_args_parser():
@@ -278,6 +349,10 @@ def train():
     print "k:", options.k
     print
     model.learn(unlabeled_reader, options.m, options.k)
+
+    # Store meta data in model
+    model.lang = options.lang
+    model.minc = options.minc
 
     # dump the model
     compressed_dump(f_model, model)

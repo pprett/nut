@@ -52,7 +52,7 @@ class L2Trainer(AuxTrainer):
     See [Ando and Zhang, 2005] or [Blitzer et al, 2006]. 
     """
 
-    def __init__(self, reg, num_iterations, truncation = False):
+    def __init__(self, reg, num_iterations, truncation=False):
 	self.reg = reg
 	self.num_iterations = num_iterations
 	self.truncation = truncation
