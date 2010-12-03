@@ -48,6 +48,12 @@ class StructLearner(object):
         The trainer for the auxiliary classifiers.
     training_strategy : TrainingStrategy
         The strategy how to invoke the `classifier_trainer`.
+    task_masks : list
+        The list of feature masks (parallel to `auxtasks`).
+        If None use auxtasks.
+    useinvertedindex : bool, True
+        Whether to create an inverted index for efficient autolabeling
+        and masking (only if training strategy not hadoop).
 
     Attributes
     ----------
@@ -63,25 +69,31 @@ class StructLearner(object):
     inverted_index = None
 
     def __init__(self, k, dataset, auxtasks, classifier_trainer,
-                 training_strategy):
+                 training_strategy, task_masks=None,
+                 useinvertedindex=True):
         if k < 1 or k > len(auxtasks):
             raise Error("0 < k < m")
         self.dataset = dataset
         self.auxtasks = [task if isinstance(task, tuple) else (task,)
                          for task in auxtasks]
+        if task_masks == None:
+            self.task_masks = self.auxtasks
+        else:
+            self.task_masks = task_masks
         self.n = dataset.n
         self.dim = dataset.dim
         self.k = k
         self.classifier_trainer = classifier_trainer
         self.training_strategy = training_strategy
-        if not isinstance(training_strategy, HadoopTrainingStrategy):
+        if useinvertedindex and \
+               not isinstance(training_strategy, HadoopTrainingStrategy):
             self.create_inverted_index()
 
     @timeit
     def create_inverted_index(self):
         iidx = defaultdict(list)
         fid_task_map = defaultdict(list)
-        for i, task in enumerate(self.auxtasks):
+        for i, task in enumerate(self.task_masks):
             for fx in task:
                 fid_task_map[fx].append(i)
 
@@ -101,6 +113,7 @@ class StructLearner(object):
         Learns the structural parameter theta from the auxiliary tasks.
         """
         W = self.training_strategy.train_aux_classifiers(self.dataset, self.auxtasks,
+                                                         self.task_masks,
                                                          self.classifier_trainer,
                                                          inverted_index=self.inverted_index)
         density = W.nnz / float(W.shape[0] * W.shape[1])

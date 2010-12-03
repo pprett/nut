@@ -5,7 +5,7 @@
 tagger
 ======
 
-TODO docs
+TODO doc
 """
 import sys
 import numpy as np
@@ -272,7 +272,7 @@ class GreedyTagger(Tagger):
             print "use ASO."
             print "projecting onto subspace...",
             sys.stdout.flush()
-            dataset = self.aso_model.project_dataset(dataset, usestandardize=True, beta=.4)
+            dataset = self.aso_model.project_dataset(dataset)
             print "[done]"
 
             # Update vocabulary and feature map with ASO features.
@@ -355,4 +355,4 @@ class GreedySVMTagger(GreedyTagger):
                        epochs=kargs["epochs"])
         trainer = bolt.OVA(sgd)
         trainer.train(glm, dataset, shuffle=kargs["shuffle"],
-                      verbose=self.verbose, ncpus=4)
+                      verbose=self.verbose, ncpus=2)

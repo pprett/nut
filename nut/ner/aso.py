@@ -17,14 +17,13 @@ import re
 import bolt
 
 from collections import defaultdict
-from time import time
 from itertools import islice
 
 from ..io import conll, compressed_dump, compressed_load
 from ..tagger import tagger
 from ..structlearn.pivotselection import FreqSelector
-
 from ..nut import structlearn
+from ..util import timeit
 
 
 __version__ = "0.1"
@@ -44,45 +43,79 @@ class ASO(object):
         self.tidx_map = dict([(tag, i) for i, tag in enumerate(tags)])
         self.tag_map = dict([(i, t) for i, t in enumerate(tags)])
 
-    def preselect_tasks(self):
+    def preselect_tasks(self, prefix):
         preselection = set()
         for fx in self.fidx_map:
-            if fx.startswith("word_cur=") or fx.startswith("word_pre=") \
-               or fx.startswith("word_post="):
+            if fx.startswith(prefix):
                 preselection.add(self.fidx_map[fx])
         return preselection
 
+    @timeit
     def create_masks(self, tokens=["pre", "cur", "post"]):
+        """Create the masks for the three auxiliary task types:
+        pre, cur, and post.
+
+        each feature name is assumed to adher to the following structure:
+        '<type>_<info>_<loc>+=<val>', where <loc> indicate
+        the token locations from which the feature is derived.
+
+        To mask all features which are derived from location <loc> we simply
+        split the feature names by underscore ('_') and than check whether
+        the task type occurs in the <loc> list.
+
+        Parameters
+        ----------
+        tokens : list, ['pre', 'cur', 'post']
+            The token locations to mask.
+
+        Returns
+        -------
+        masks : dict
+            A dict mapping a token (e.g. 'pre') to an array containing the
+            masked feature indizes. 
+        """
         pattern = re.compile("_|=")
         masks = {}
         for token in tokens:
-            mask = set((i for i, fx in enumerate(self.fidx_map.iterkeys())
-                                if token in pattern.split(fx)[1]))
-            masks[token] = np.array(mask)
+            masked_features = set((idx for fname, idx in self.fidx_map.iteritems()
+                                   if token in pattern.split(fname)[2:]))
+            print "%s has %d masked features." % (token, len(masked_features))
+            masks[token] = masked_features
+            
         return masks
 
     def create_aux_tasks(self, dataset, m):
         """Select the m most frequent left, right, and current words.
 
-        TODO: mask all features derived from the left, right, and current word.
+        TODO: mask all features derived from the left, right, and
+        current word.
 
         Parameters
         ----------
         m : int
-            The number of tasks to generate.
+            The number of tasks for left, right, and current
+            word to generate.
 
         Returns
         -------
-        aux_tasks : list
+        aux_tasks : list, len(list)==3*m
             The list of auxiliary tasks. These correspond to features
             which will subsequently be used to autolabel the unlabeled data.
-        task_masks : list
+        task_masks : list, len(list)==3*m
             A list of feature tuples. The i-th tuple holds the masked features
             for the i-th auxiliary task.
         """
-        preselection = self.preselect_tasks()
-        aux_tasks = list(islice(
-            FreqSelector(0).select(dataset, preselection), m))
+        # get m most frequent current, left, and right words
+        aux_tasks = []
+        for prefix in ["word_unigram_cur=", "word_unigram_pre=",
+                       "word_unigram_post="]:
+            preselection = self.preselect_tasks(prefix)
+            aux_tasks.extend(list(islice(
+                FreqSelector(0).select(dataset, preselection), m)))
+
+        masks = self.create_masks()
+        task_masks = [masks["cur"]]*m + [masks["pre"]]*m + [masks["post"]]*m
+        assert len(task_masks) == len(aux_tasks)
         return aux_tasks, aux_tasks
 
     def print_tasks(self, tasks):
@@ -116,18 +149,27 @@ class ASO(object):
         dataset = tagger.build_examples(reader, self.fd, self.hd,
                                         self.fidx_map, self.tags,
                                         pos_prefixes=["NN", "JJ"])
-        print "num examples: %d" % dataset.n
-        aux_tasks, masks = self.create_aux_tasks(dataset, m)
-        print "selected %d auxiliary tasks. " % len(aux_tasks)
+        print "|examples|: %d" % dataset.n
+        aux_tasks, task_masks = self.create_aux_tasks(dataset, m)
+        print "|aux_tasks|: %d" % len(aux_tasks)
         # self.print_tasks(aux_tasks)
         feature_type_splits = self.create_feature_type_splits()
-        trainer = structlearn.auxtrainer.ElasticNetTrainer(0.00001, 0.85,
-                                               10**6)
-        strategy = structlearn.auxstrategy.HadoopTrainingStrategy()
+        
+        #trainer = structlearn.auxtrainer.ElasticNetTrainer(0.00001, 0.85,
+        #                                                   10**7)
+        
+        trainer = structlearn.auxtrainer.L2Trainer(0.00001, 10**7,
+                                                   truncation=True)
+        
+        #strategy = structlearn.auxstrategy.HadoopTrainingStrategy()
+        strategy = structlearn.auxstrategy.ParallelTrainingStrategy(n_jobs=3)
+        
         struct_learner = structlearn.StructLearner(k, dataset,
                                                    aux_tasks,
+                                                   task_masks,
                                                    trainer,
-                                                   strategy)
+                                                   strategy,
+                                                   useinvertedindex=False)
         # learn the embedding
         # TODO apply SVD by feature type.
         struct_learner.learn()
@@ -148,7 +190,8 @@ class ASO(object):
         self.k = k
         return self
 
-    def project_dataset(self, dataset, usestandardize=True, beta=1.0):
+    def project_dataset(self, dataset, usestandardize=True, useavgnorm=True,
+                        beta=1.0):
         """Project dataset onto the subspace induced by theta
         and concatenate the new features with the original
         features.
@@ -160,6 +203,9 @@ class ASO(object):
         usestandardize : bool, True
             Whether or not the projected features should be standardized.
             If so mean and std are stored.
+        useavgnorm : bool, True
+            Whether to scale the projected features such that their L2 norm
+            equals the L2 norm of the sparse features.
         beta : float, 1.0
             Scaling factor for the projected features.
 
@@ -178,9 +224,33 @@ class ASO(object):
         if usestandardize:
             mean = proj_dataset.mean(axis=0)
             std = proj_dataset.std(axis=0)
-            self.mean, self.std = mean, std
-            self.beta = beta
-            structlearn.standardize(proj_dataset, mean, std, beta)
+            self.mean= mean
+            self.std = std
+            structlearn.standardize(proj_dataset, mean, std, 1.0)
+
+        if useavgnorm:
+            sparse_norm = sum((np.linalg.norm(x['f1'])
+                            for x in dataset.iterinstances()))
+            sparse_norm /= dataset.n
+            print "sparse_norm:", sparse_norm
+            norms = np.sqrt((proj_dataset * proj_dataset).sum(axis=1))
+            dense_norm = np.mean(norms)
+            print "dense_norm:", dense_norm
+            scaling_factor = sparse_norm / dense_norm
+
+            # scale dense features and store scaling factor for future use
+            proj_dataset *= scaling_factor
+            self.scaling_factor = scaling_factor
+
+            ## recompute dense norm and assert if equal to sparse norm
+            #norms = np.sqrt((proj_dataset * proj_dataset).sum(axis=1))
+            #dense_norm = np.mean(norms)
+            #np.testing.assert_almost_equal(dense_norm, sparse_norm, decimal=4)
+
+        # we have to scale by beta at last because otherwise
+        # the above assert will break.
+        self.beta = beta
+        proj_dataset *= beta
 
         # from dense array to MemoryDataset
         proj_dataset = structlearn.to_sparse_bolt(proj_dataset)
@@ -195,7 +265,7 @@ class ASO(object):
         assert new_dataset.dim == dataset.dim + self.thetat.shape[1]
         return new_dataset
 
-    def project_instance(self, instance, usestandardize=True):
+    def project_instance(self, instance, usestandardize=True, useavgnorm=True):
         """Project instance onto the subspace induced by theta
         and concatenate the new features with the original
         features.
@@ -208,8 +278,13 @@ class ASO(object):
         proj_instance = structlearn.project_instance_dense(instance,
                                                            self.thetat)
         if usestandardize:
+            # save to scale by beta before average norm scaling factor.
             structlearn.standardize(proj_instance, self.mean, self.std,
                                     self.beta)
+
+        if useavgnorm:
+            proj_instance *= self.scaling_factor
+
         proj_instance = bolt.dense2sparse(proj_instance)
         new_instance = structlearn.concat_instances(instance,
                                                     proj_instance,

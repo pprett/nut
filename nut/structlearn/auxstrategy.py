@@ -28,7 +28,7 @@ from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from scipy import sparse
 from time import time
-from itertools import izip
+from itertools import izip, count
 
 from ..structlearn import util
 from ..util import timeit, trace
@@ -52,7 +52,8 @@ class TrainingStrategy(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer,
+    def train_aux_classifiers(self, ds, auxtasks, task_masks,
+                              classifier_trainer,
                               inverted_index=None):
         """Abstract method to train auxiliary classifiers, i.e. to fill `struct_learner.W`."""
         return 0
@@ -66,22 +67,22 @@ class SerialTrainingStrategy(TrainingStrategy):
     """
 
     @timeit
-    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer,
-                              inverted_index=None):
+    def train_aux_classifiers(self, ds, auxtasks, task_masks,
+                              classifier_trainer, inverted_index=None):
         dim = ds.dim
         w_data = []
         row = []
         col = []
         original_instances = ds.instances[ds._idx]
 
-        for j, auxtask in enumerate(auxtasks):
+        for j, auxtask, task_mask in izip(count(), auxtasks, task_masks):
             instances = deepcopy(original_instances)
             if inverted_index is None:
-                util.mask(instances, auxtask)
+                util.mask(instances, task_mask)
                 labels = util.autolabel(instances, auxtask)
             else:
                 occurances = inverted_index[j]
-                util.mask(instances[occurances], auxtask)
+                util.mask(instances[occurances], task_mask)
                 labels = np.ones((instances.shape[0],), dtype=np.float32)
                 labels *= -1.0
                 labels[occurances] = 1.0
@@ -112,8 +113,8 @@ class ParallelTrainingStrategy(TrainingStrategy):
         self.n_jobs = n_jobs
 
     @timeit
-    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer,
-                              inverted_index=None):
+    def train_aux_classifiers(self, ds, auxtasks, task_masks,
+                              classifier_trainer, inverted_index=None):
         dim = ds.dim
         w_data = []
         row = []
@@ -122,10 +123,11 @@ class ParallelTrainingStrategy(TrainingStrategy):
         print "Run joblib.Parallel"
         res = Parallel(n_jobs=self.n_jobs, verbose=1)(
                 delayed(_train_aux_classifier)(i, auxtask,
+                                               task_mask,
                                                original_instances,
                                                dim, classifier_trainer,
                                                inverted_index[i])
-            for i, auxtask in enumerate(auxtasks))
+            for i, auxtask, task_mask in izip(count(), auxtasks, task_masks))
 
         for i, (fx_idxs, fx_vals) in res:
             for fx_idx, fx_val in izip(fx_idxs, fx_vals):
@@ -138,8 +140,8 @@ class ParallelTrainingStrategy(TrainingStrategy):
                               dtype=np.float64)
         return W.tocsc()
 
-def _train_aux_classifier(i, auxtask, original_instances, dim,
-                          classifier_trainer, occurances=None):
+def _train_aux_classifier(i, auxtask, task_mask, original_instances,
+                          dim, classifier_trainer, occurances=None):
     """Trains a single auxiliary classifier.
 
     Parameters
@@ -148,6 +150,8 @@ def _train_aux_classifier(i, auxtask, original_instances, dim,
         The index of the auxiliary task.
     auxtask : tuple of ints
         The auxiliary task.
+    task_mask : set
+        The features to mask (=set to zero).
     original_instances : array, dtype=bolt.sparsedtype
         The unlabeled instances.
     dim : int
@@ -168,11 +172,10 @@ def _train_aux_classifier(i, auxtask, original_instances, dim,
     """
     instances = original_instances
     if occurances is None:
-        util.mask(instances, auxtask)
+        util.mask(instances, task_mask)
         labels = util.autolabel(instances, auxtask)
     else:
-        #occurances = inverted_index[i]
-        util.mask(instances[occurances], auxtask)
+        util.mask(instances[occurances], task_mask)
         labels = np.ones((instances.shape[0],), dtype=np.float32)
         labels *= -1.0
         labels[occurances] = 1.0
@@ -187,10 +190,10 @@ class HadoopTrainingStrategy(TrainingStrategy):
     For each auxiliary task a map task is created.
     The mapper is implemented as a python script using hadoop streaming.
     """
-
+    ## FIXME add task_masks
     @timeit
-    def train_aux_classifiers(self, ds, auxtasks, classifier_trainer,
-                              inverted_index=None):
+    def train_aux_classifiers(self, ds, auxtasks, task_masks,
+                              classifier_trainer, inverted_index=None):
         dim = ds.dim
         m = len(auxtasks)
         tmpdir = tempfile.mkdtemp()
@@ -198,6 +201,7 @@ class HadoopTrainingStrategy(TrainingStrategy):
         run_id = os.path.split(tmpdir)[-1]
         try:
             reg = classifier_trainer.reg
+            n_iter = classifier_trainer.num_iterations
             if isinstance(classifier_trainer, auxtrainer.ElasticNetTrainer):
                 norm = 3
                 alpha = classifier_trainer.alpha
@@ -213,7 +217,7 @@ class HadoopTrainingStrategy(TrainingStrategy):
             else:
                 raise Error("auxtrainer not registered " \
                             "at HadoopTrainingStrategy.")
-            self._mktasks(tmpdir, auxtasks, alpha, norm, reg)
+            self._mktasks(tmpdir, auxtasks, alpha, norm, reg, n_iter)
             ds.store(tmpdir + "/examples.npy")
             self._mkhdfsdir(run_id)
             self._send_file_to_hdfs(tmpdir + "/tasks.txt", run_id)
@@ -230,12 +234,12 @@ class HadoopTrainingStrategy(TrainingStrategy):
             shutil.rmtree(tmpdir)
             print("Cleaning local temp dir.")
 
-    def _mktasks(self, tmpdir, auxtasks, alpha, norm, reg):
+    def _mktasks(self, tmpdir, auxtasks, alpha, norm, reg, n_iter):
         f = open(tmpdir + "/tasks.txt", "w+")
         for i, task in enumerate(auxtasks):
             params = {"taskid":i, "task":str(task),
-                      "alpha":alpha,
-                      "norm":norm, "reg":reg}
+                      "alpha":alpha, "norm":norm,
+                      "reg":reg, "n_iter":n_iter}
             f.write(json.dumps(params))
             f.write("\n")
         f.close()

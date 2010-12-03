@@ -34,18 +34,15 @@ except ImportError:
     import simplejson as json
 
 import bolt
-
 import util
-
-T = 10**6
 
 
 def serialize(arr):
     return " ".join(["%d:%.20f"%(idx,arr[idx]) for idx in arr.nonzero()[0]])
 
 
-def train(ds, reg=0.00001, alpha=0.85, norm=2):
-    epochs = int(math.ceil(float(T) / float(ds.n)))
+def train(ds, reg=0.00001, alpha=0.85, norm=2, n_iter=10**6):
+    epochs = int(math.ceil(float(n_iter) / float(ds.n)))
     loss = bolt.ModifiedHuber()
     model = bolt.LinearModel(ds.dim, biasterm=False)
     sgd = bolt.SGD(loss, reg, epochs=epochs, norm=norm, alpha=alpha)
@@ -69,14 +66,16 @@ def main(separator='\t'):
         reg = params[u"reg"]
         alpha = params.get(u"alpha", 0.85)
         norm = params.get(u"norm", 3)
+        n_iter = params.get(u"n_iter", 10**6)
 
         instances = copy.deepcopy(original_instances)
         labels = util.autolabel(instances, auxtask)
         util.mask(instances, auxtask)
         maskedds = bolt.io.MemoryDataset(ds.dim, instances, labels)
-        w = train(maskedds, reg=reg, alpha=alpha, norm=norm)
+        w = train(maskedds, reg=reg, alpha=alpha, norm=norm, n_iter=n_iter)
         if norm == 2:
             w[w<0.0] = 0.0
+        
         sw = serialize(w)  
         print >> sys.stdout, "%d\t%s" % (taskid,sw)
 
