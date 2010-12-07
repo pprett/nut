@@ -47,7 +47,7 @@ def fd(sent, index, length):
     #pre_pre_pos_bigram = "/".join([pre_pre_pos, pre_pos])
     #post_post_pos_bigram = "/".join([post_pos, post_post_pos])
 
-    posw_cur = "/".join([word_unigram_cur, pos_cur])
+    pos_posw_cur = "/".join([word_unigram_cur, pos_cur])
 
     ## Word shape features (5 token window)
     shape_istitle_cur = word_unigram_cur.istitle()

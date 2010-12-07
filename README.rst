@@ -8,7 +8,7 @@ To install nut you need:
 
    * Python 2.5 or 2.6
    * Numpy (>= 1.1)
-   * Bolt  (>= 1.4) [#f1]_
+   * Bolt  (feature-mask branch) [#f1]_
    * Sparsesvd (>= 0.1.4) [#f2]_
 
 Installation
@@ -116,7 +116,7 @@ You can pipe the output directly to `conlleval` to assess the model performance:
 References
 ----------
 
-.. [#f1] http://github.com/pprett/bolt
+.. [#f1] https://github.com/pprett/bolt/tree/feature-mask
 .. [#f2] http://pypi.python.org/pypi/sparsesvd/0.1.4
 .. [#f3] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
 

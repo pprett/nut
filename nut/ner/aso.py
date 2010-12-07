@@ -16,6 +16,8 @@ import numpy as np
 import re
 import bolt
 
+import pdb
+
 from collections import defaultdict
 from itertools import islice
 
@@ -72,7 +74,7 @@ class ASO(object):
         -------
         masks : dict
             A dict mapping a token (e.g. 'pre') to an array containing the
-            masked feature indizes. 
+            masked feature indizes.
         """
         pattern = re.compile("_|=")
         masks = {}
@@ -80,8 +82,8 @@ class ASO(object):
             masked_features = set((idx for fname, idx in self.fidx_map.iteritems()
                                    if token in pattern.split(fname)[2:]))
             print "%s has %d masked features." % (token, len(masked_features))
-            masks[token] = masked_features
-            
+            masks[token] = np.unique(masked_features)
+
         return masks
 
     def create_aux_tasks(self, dataset, m):
@@ -116,7 +118,7 @@ class ASO(object):
         masks = self.create_masks()
         task_masks = [masks["cur"]]*m + [masks["pre"]]*m + [masks["post"]]*m
         assert len(task_masks) == len(aux_tasks)
-        return aux_tasks, aux_tasks
+        return aux_tasks, task_masks
 
     def print_tasks(self, tasks):
         for task in tasks:
@@ -125,14 +127,19 @@ class ASO(object):
     def create_feature_type_splits(self):
         """compute begin and end idx for each feature type.
         """
+        pattern = re.compile("_|=")
         feature_types = defaultdict(list)
         for i, fid in enumerate(self.vocabulary):
-            ftype = fid.split("=")[0]
+            ftype = pattern.split(fid, 1)[0]
             feature_types[ftype].append(i)
         for key, value in feature_types.iteritems():
             value = np.array(value)
             feature_types[key] = (value.min(), value.max())
-        return feature_types
+
+        indices = sorted(feature_types.values())
+        for i in range(len(indices)-1):
+            assert indices[i][1]+1 == indices[i+1][0]
+        return dict(feature_types)
 
     def learn(self, reader, m, k):
         """Learns the ASO embedding theta.
@@ -152,33 +159,35 @@ class ASO(object):
         print "|examples|: %d" % dataset.n
         aux_tasks, task_masks = self.create_aux_tasks(dataset, m)
         print "|aux_tasks|: %d" % len(aux_tasks)
-        # self.print_tasks(aux_tasks)
-        feature_type_splits = self.create_feature_type_splits()
+        print "|task_masks|: %d" % len(task_masks)
+        print type(task_masks)
         
+        # self.print_tasks(aux_tasks)
+        feature_types = self.create_feature_type_splits()
+        print "Feature types:"
+        print feature_types
+        print
+        self.feature_types = feature_types
+
         #trainer = structlearn.auxtrainer.ElasticNetTrainer(0.00001, 0.85,
         #                                                   10**7)
-        
+
         trainer = structlearn.auxtrainer.L2Trainer(0.00001, 10**7,
-                                                   truncation=True)
-        
-        #strategy = structlearn.auxstrategy.HadoopTrainingStrategy()
-        strategy = structlearn.auxstrategy.ParallelTrainingStrategy(n_jobs=3)
-        
+                                                   truncate=True)
+
+        strategy = structlearn.auxstrategy.HadoopTrainingStrategy()
+        #strategy = structlearn.auxstrategy.ParallelTrainingStrategy(n_jobs=3)
+
+        dataset.shuffle(9)
         struct_learner = structlearn.StructLearner(k, dataset,
                                                    aux_tasks,
-                                                   task_masks,
                                                    trainer,
                                                    strategy,
-                                                   useinvertedindex=False)
+                                                   task_masks=task_masks,
+                                                   useinvertedindex=False,
+                                                   feature_types=self.feature_types)
         # learn the embedding
-        # TODO apply SVD by feature type.
         struct_learner.learn()
-
-        # TODO post-process embedding
-        # - project unlabeled data
-        # - compute and store mean and std
-        # FIXME Blitzer does this on training data only
-        # This could be done in ner.py!
 
         # store data in model
         print
@@ -224,7 +233,7 @@ class ASO(object):
         if usestandardize:
             mean = proj_dataset.mean(axis=0)
             std = proj_dataset.std(axis=0)
-            self.mean= mean
+            self.mean = mean
             self.std = std
             structlearn.standardize(proj_dataset, mean, std, 1.0)
 
@@ -412,8 +421,8 @@ def train():
         print "build vocabulary..."
         # FIXME use minc+2 for unlabeled data.
         V, T = tagger.build_vocabulary(readers, fd, hd, minc=[options.minc,
-                                                              options.minc + 2],
-                                           use_eph=options.use_eph)
+                                                              options.minc + 1],
+                                       use_eph=options.use_eph)
         print "|V|:", len(V)
         print "|T|:", len(T)
         print

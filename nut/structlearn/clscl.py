@@ -176,8 +176,8 @@ class CLSCLTrainer(object):
 
         Returns
         -------
-        list of tuples, len(list) <= m
-            A list of tuples (w_s, w_t) where w_s is the vocabulary
+        list of arrays, len(list) <= m
+            A list of arrays array([w_s, w_t]) where w_s is the vocabulary
             index of the source pivot word and w_t is the index of
             the target word.
             The number of pivots might be smaller than `m`.
@@ -187,7 +187,7 @@ class CLSCLTrainer(object):
                              ((ws, self.pivottranslator[ws])
                               for ws in vp))
         counts = util.count(self.s_unlabeled, self.t_unlabeled)
-        pivots = ((ws, wt) for ws, wt in candidates \
+        pivots = (np.array([ws, wt]) for ws, wt in candidates \
                          if counts[ws] >= phi and counts[wt] >= phi)
         pivots = [pivot for pivot in islice(pivots, m)]
         #terms = [(self.s_ivoc[ws],self.t_ivoc[wt]) for ws,wt in pivots]

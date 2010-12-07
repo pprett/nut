@@ -39,21 +39,33 @@ class StructLearner(object):
     ----------
     k : int
         The dimensionality of the shared representation.
-    ds : bolt.MemoryDataset
+
+    dataset : bolt.MemoryDataset
         The unlabeled data set.
+
     auxtasks : list
         A list of features (or tuples of features);
         each representing one task.
+
     classifier_trainer : AuxTrainer
         The trainer for the auxiliary classifiers.
+
     training_strategy : TrainingStrategy
         The strategy how to invoke the `classifier_trainer`.
+
     task_masks : list
         The list of feature masks (parallel to `auxtasks`).
         If None use auxtasks.
+
     useinvertedindex : bool, True
         Whether to create an inverted index for efficient autolabeling
         and masking (only if training strategy not hadoop).
+
+    feature_types : dict, None
+        A dict mapping each feature type to the minimum and maximum
+        feature index in the vocabulary (i.e. feature_type: (min, max)).
+        It uses inclusive semantics (i.e. max is part of the span).
+        Feature types are assumed to be contignouse blocks in the vocabulary.
 
     Attributes
     ----------
@@ -70,12 +82,11 @@ class StructLearner(object):
 
     def __init__(self, k, dataset, auxtasks, classifier_trainer,
                  training_strategy, task_masks=None,
-                 useinvertedindex=True):
+                 useinvertedindex=True, feature_types=None):
         if k < 1 or k > len(auxtasks):
             raise Error("0 < k < m")
         self.dataset = dataset
-        self.auxtasks = [task if isinstance(task, tuple) else (task,)
-                         for task in auxtasks]
+        self.auxtasks = [np.atleast_1d(task).ravel() for task in auxtasks]
         if task_masks == None:
             self.task_masks = self.auxtasks
         else:
@@ -88,6 +99,11 @@ class StructLearner(object):
         if useinvertedindex and \
                not isinstance(training_strategy, HadoopTrainingStrategy):
             self.create_inverted_index()
+        if feature_types == None:
+            feature_type_split = [(0, dataset.dim - 1)]
+        else:
+            feature_type_split = sorted(feature_types.values())
+        self.feature_type_split = feature_type_split
 
     @timeit
     def create_inverted_index(self):
@@ -117,10 +133,59 @@ class StructLearner(object):
                                                          self.classifier_trainer,
                                                          inverted_index=self.inverted_index)
         density = W.nnz / float(W.shape[0] * W.shape[1])
-        print "density: %.4f" % density
-        Ut, s, Vt = sparsesvd.sparsesvd(W, self.k)
-        print "Ut.shape = (%d,%d)" % Ut.shape
-        self.thetat = Ut.T
+        print "density of W: %.4f" % density
+        self.thetat = self.compute_svd(W)
+        print "shape of Theta^T = (%d,%d)" % self.thetat.shape
+
+    def compute_svd(self, W):
+        """Compute the sparse SVD of W.
+
+        Perform SVD for each `feature_type_split` and concatenate the
+        resulting matrices.
+
+        Parameters
+        ----------
+
+        W : array, shape = [n_features, n_auxtasks]
+            The weight matrix, each column vector represents
+            one auxiliary classifier.
+        """
+        k = self.k
+
+        # feature splits need to be sorted in asc order
+        feature_type_split = sorted(self.feature_type_split)
+
+        # create theta^t
+        thetat = np.zeros((W.shape[0], k * len(feature_type_split)),
+                          dtype=np.float64)
+        col_offset = 0
+        for f_min, f_max in feature_type_split:
+            print "_"*80
+            print "block (%d, %d)" % (f_min, f_max)
+            A = W[f_min:f_max + 1]
+            print "A.nnz:", A.nnz
+            print "A.shape:", A.shape
+            Ut, s, Vt = sparsesvd.sparsesvd(A, k)
+            print "Spectrum:\ns.min()=%f, s.max()=%f" % (s.min(), s.max())
+            print "Ut.shape", Ut.shape
+            if np.all(s == 0.0):
+                print "skip block (%d, %d)" % (f_min, f_max)
+                continue
+
+            # check feature span of Ut
+            span = (f_max + 1) - f_min
+            assert Ut.shape[1] == span
+
+            thetat[f_min:f_max + 1, col_offset:col_offset + Ut.shape[0]] = Ut.T
+            col_offset += Ut.shape[0]
+
+        thetat = thetat[:, :col_offset]
+        print "_"*80
+        print "thetat.shape", thetat.shape
+        if thetat == None:
+            raise Exception("Error in compute_svd; spectrum is too small. "\
+                            "It seems that W is too sparse?")
+        return thetat
 
 
 def project_instance_dense(x, thetat):
@@ -225,3 +290,30 @@ def to_sparse_bolt(X):
     for i, x in enumerate(X):
         res[i] = bolt.dense2sparse(x)
     return bolt.fromlist(res, np.object)
+
+
+def compute_svd(W, feature_type_split, k):
+    thetat = None
+
+    # feature splits need to be sorted in asc order
+    feature_type_split = sorted(feature_type_split)
+
+    for f_min, f_max in feature_type_split:
+        Ut, s, Vt = sparsesvd.sparsesvd(W[f_min:f_max + 1], k)
+        span = (f_max + 1) - f_min
+
+        # pad Ut with zeros the get shape[0]==k
+        if Ut.shape[0] != k:
+            diff = k - Ut.shape[0]
+            padding = np.zeros((diff, Ut.shape[1]), dtype=np.float64)
+            Ut = np.r_[Ut, padding]
+
+        # check feature span of Ut
+        assert Ut.shape[1] == span
+
+        if thetat == None:
+            thetat = Ut.T
+        else:
+            thetat = np.r_[thetat, Ut.T]
+
+    return thetat

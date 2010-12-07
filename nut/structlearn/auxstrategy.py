@@ -23,20 +23,18 @@ import os
 import json
 import tempfile
 import shutil
+import cPickle as pickle
 
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from scipy import sparse
 from time import time
 from itertools import izip, count
+from collections import defaultdict
 
 from ..structlearn import util
 from ..util import timeit, trace
-from . import auxtrainer
-
 from ..externals.joblib import Parallel, delayed
-
-__author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 
 
 class Error(Exception):
@@ -44,7 +42,8 @@ class Error(Exception):
 
 
 class TrainingStrategy(object):
-    """An interface of different training strategies for the auxiliary classifiers.
+    """An interface of different training strategies for the auxiliary
+    classifiers.
 
     Use this to implement various parallel or distributed training strategies.
     Delegates the training of a single classifier to a concrete `AuxTrainer`.
@@ -55,7 +54,7 @@ class TrainingStrategy(object):
     def train_aux_classifiers(self, ds, auxtasks, task_masks,
                               classifier_trainer,
                               inverted_index=None):
-        """Abstract method to train auxiliary classifiers, i.e. to fill `struct_learner.W`."""
+        """Abstract method to train auxiliary classifiers."""
         return 0
 
 
@@ -78,17 +77,18 @@ class SerialTrainingStrategy(TrainingStrategy):
         for j, auxtask, task_mask in izip(count(), auxtasks, task_masks):
             instances = deepcopy(original_instances)
             if inverted_index is None:
-                util.mask(instances, task_mask)
                 labels = util.autolabel(instances, auxtask)
             else:
                 occurances = inverted_index[j]
-                util.mask(instances[occurances], task_mask)
                 labels = np.ones((instances.shape[0],), dtype=np.float32)
                 labels *= -1.0
                 labels[occurances] = 1.0
             ds = bolt.io.MemoryDataset(dim, instances, labels)
 
-            w = classifier_trainer.train_classifier(ds)
+            mask = np.ones((dim,), dtype=np.int32, order="C")
+            mask[task_mask] = 0
+
+            w = classifier_trainer.train_classifier(ds, mask)
             for i in w.nonzero()[0]:
                 row.append(i)
                 col.append(j)
@@ -120,6 +120,8 @@ class ParallelTrainingStrategy(TrainingStrategy):
         row = []
         col = []
         original_instances = ds.instances[ds._idx]
+        if inverted_index == None:
+            inverted_index = defaultdict(lambda: None)
         print "Run joblib.Parallel"
         res = Parallel(n_jobs=self.n_jobs, verbose=1)(
                 delayed(_train_aux_classifier)(i, auxtask,
@@ -140,8 +142,9 @@ class ParallelTrainingStrategy(TrainingStrategy):
                               dtype=np.float64)
         return W.tocsc()
 
-def _train_aux_classifier(i, auxtask, task_mask, original_instances,
-                          dim, classifier_trainer, occurances=None):
+
+def _train_aux_classifier(i, auxtask, task_mask, instances,
+                          dim, classifier_trainer, occurrences=None):
     """Trains a single auxiliary classifier.
 
     Parameters
@@ -170,27 +173,27 @@ def _train_aux_classifier(i, auxtask, task_mask, original_instances,
         array holds the indizes of the non zero features and the
         second array holds the values.
     """
-    instances = original_instances
-    if occurances is None:
-        util.mask(instances, task_mask)
+    if occurrences is None:
         labels = util.autolabel(instances, auxtask)
     else:
-        util.mask(instances[occurances], task_mask)
         labels = np.ones((instances.shape[0],), dtype=np.float32)
         labels *= -1.0
-        labels[occurances] = 1.0
+        labels[occurrences] = 1.0
     dataset = bolt.io.MemoryDataset(dim, instances, labels)
-    w = classifier_trainer.train_classifier(dataset)
+
+    # create feature mask
+    mask = np.ones((dim,), dtype=np.int32, order="C")
+    mask[task_mask] = 0
+    w = classifier_trainer.train_classifier(dataset, mask)
     return i, (w.nonzero()[0], w[w.nonzero()[0]])
 
 
 class HadoopTrainingStrategy(TrainingStrategy):
     """A distributed strategy which utilizes Hadoop.
 
-    For each auxiliary task a map task is created.
-    The mapper is implemented as a python script using hadoop streaming.
+    For each auxiliary task a Hadoop map task is created.
+    The mapper is implemented as a python script using Hadoop Streaming.
     """
-    ## FIXME add task_masks
     @timeit
     def train_aux_classifiers(self, ds, auxtasks, task_masks,
                               classifier_trainer, inverted_index=None):
@@ -200,46 +203,45 @@ class HadoopTrainingStrategy(TrainingStrategy):
         print "tempdir:", tmpdir
         run_id = os.path.split(tmpdir)[-1]
         try:
-            reg = classifier_trainer.reg
-            n_iter = classifier_trainer.num_iterations
-            if isinstance(classifier_trainer, auxtrainer.ElasticNetTrainer):
-                norm = 3
-                alpha = classifier_trainer.alpha
-            elif isinstance(classifier_trainer, auxtrainer.L2Trainer):
-                norm = 2
-                alpha = 1.0
-                if classifier_trainer.truncation != True:
-                    raise Error("Hadoop strategy only supports " \
-                                "L2 regularization with truncation. ")
-            elif isinstance(classifier_trainer, auxtrainer.L1Trainer):
-                norm = 1
-                alpha = 0.0
-            else:
-                raise Error("auxtrainer not registered " \
-                            "at HadoopTrainingStrategy.")
-            self._mktasks(tmpdir, auxtasks, alpha, norm, reg, n_iter)
+            print "use classifier_trainer:", repr(classifier_trainer)
+            self._mktasks(tmpdir, auxtasks, classifier_trainer)
             ds.store(tmpdir + "/examples.npy")
             self._mkhdfsdir(run_id)
             self._send_file_to_hdfs(tmpdir + "/tasks.txt", run_id)
             self._send_file_to_hdfs(tmpdir + "/examples.npy", run_id)
+
+            # if auxtasks and masks are not identical (e.g. NER)
+            if auxtasks is not task_masks:
+                print "Copying task_masks to HDFS."
+                f = open(tmpdir + "/task_masks.pkl", "wb")
+                pickle.dump(task_masks, f, protocol=-1)
+                f.close()
+                self._send_file_to_hdfs(tmpdir + "/task_masks.pkl", run_id)
+            else:
+                print "Don't copy task_masks to HDFS."
+
             print "processing Hadoop job...",
             sys.stdout.flush()
             retcode = self._runmapper(run_id + "/tasks.txt",
                                       run_id + "/examples.npy",
-                                      run_id+"/out.txt")
+                                      run_id + "/out.txt")
             W = self._readoutput(run_id + "/out.txt", (dim, m))
+            ## FIXME remove below
+            f = open("/tmp/W.pkl", "wb")
+            pickle.dump(W, f, -1)
+            f.close()
+            ## FIXME remove above
             self._rm_hdfs_dir(run_id)
             return W
         finally:
             shutil.rmtree(tmpdir)
             print("Cleaning local temp dir.")
 
-    def _mktasks(self, tmpdir, auxtasks, alpha, norm, reg, n_iter):
+    def _mktasks(self, tmpdir, auxtasks, classifier_trainer):
         f = open(tmpdir + "/tasks.txt", "w+")
         for i, task in enumerate(auxtasks):
-            params = {"taskid":i, "task":str(task),
-                      "alpha":alpha, "norm":norm,
-                      "reg":reg, "n_iter":n_iter}
+            params = {"taskid": i, "task": list(task),
+                      "trainer": repr(classifier_trainer)}
             f.write(json.dumps(params))
             f.write("\n")
         f.close()
@@ -263,7 +265,7 @@ class HadoopTrainingStrategy(TrainingStrategy):
         return retcode
 
     def _runmapper(self, ftasks, fexamples, fout,
-                   streaming_jar = "/usr/lib/hadoop/contrib/streaming/" \
+                   streaming_jar="/usr/lib/hadoop/contrib/streaming/" \
                    "hadoop-0.18.3-2cloudera0.3.0-streaming.jar"):
         """Runs the dumbomapper with input `ftasks` and
         `fexamples`.
@@ -275,10 +277,10 @@ class HadoopTrainingStrategy(TrainingStrategy):
         fauxtrainer = inspect.getsourcefile(auxtrainer)
         futil = inspect.getsourcefile(util)
 
-        param = {"ftasks":ftasks, "fexamples":fexamples, "fout":fout,
-                 "streaming_jar":streaming_jar, "futil":futil,
-                 "fmapper":fmapper, "fauxtrainer":fauxtrainer}
-        
+        param = {"ftasks": ftasks, "fexamples": fexamples, "fout": fout,
+                 "streaming_jar": streaming_jar, "futil": futil,
+                 "fmapper": fmapper, "fauxtrainer": fauxtrainer}
+
         cmd = """hadoop jar %(streaming_jar)s \
         -input %(ftasks)s \
         -output %(fout)s \
@@ -299,7 +301,8 @@ class HadoopTrainingStrategy(TrainingStrategy):
         return retcode
 
     def _deserialize(self, s):
-        return [(int(i), float(v)) for i, v in [f.split(":") for f in s.split(" ")]]
+        return [(int(i), float(v)) for i, v in [f.split(":")
+                                                for f in s.split(" ")]]
 
     @timeit
     def _readoutput(self, fout, shape):

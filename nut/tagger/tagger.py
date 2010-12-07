@@ -68,9 +68,10 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
             length = len(untagged_sent)
             for index in range(length):
                 features = fd(untagged_sent, index, length)
-                pre_tags = tag_seq[:index]
-                history = hd(pre_tags, untagged_sent, index, length)
-                features.extend(history)
+                if not reader.raw:
+                    pre_tags = tag_seq[:index]
+                    history = hd(pre_tags, untagged_sent, index, length)
+                    features.extend(history)
                 features = ("%s=%s" % (ftype, fval)
                             for ftype, fval in features if fval)
                 for fx in features:
@@ -158,15 +159,16 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False,
 
             # extract node and edge features
             features = fd(untagged_sent, index, length)
-            pre_tags = tag_seq[:index]
             tag = tag_seq[index]
-            history = hd(pre_tags, untagged_sent,
-                         index, length)
-            features.extend(history)
+            if not reader.raw:
+                pre_tags = tag_seq[:index]
+                history = hd(pre_tags, untagged_sent,
+                             index, length)
+                features.extend(history)
 
             # encode node and edge features as indicators
             enc_features = encode_indicator(features)
-            if use_eph:
+            if not reader.raw and use_eph:
                 w = untagged_sent[index][0]
                 # add EPH to encoded features
                 if w in eph:

@@ -25,8 +25,9 @@ hadoop jar /usr/lib/hadoop/contrib/streaming/hadoop-0.18.3-2cloudera0.3.0-stream
 """
  
 import sys
-import copy
-import math
+import os
+import pickle
+import numpy as np
 
 try:
     import json
@@ -35,26 +36,23 @@ except ImportError:
 
 import bolt
 import util
+from auxtrainer import *
 
 
 def serialize(arr):
-    return " ".join(["%d:%.20f"%(idx,arr[idx]) for idx in arr.nonzero()[0]])
+    return " ".join(["%d:%.20f" %(idx, arr[idx]) for idx in arr.nonzero()[0]])
 
 
-def train(ds, reg=0.00001, alpha=0.85, norm=2, n_iter=10**6):
-    epochs = int(math.ceil(float(n_iter) / float(ds.n)))
-    loss = bolt.ModifiedHuber()
-    model = bolt.LinearModel(ds.dim, biasterm=False)
-    sgd = bolt.SGD(loss, reg, epochs=epochs, norm=norm, alpha=alpha)
-    sgd.train(model, ds, verbose=0, shuffle=False)
-    return model.w
-
-  
 def main(separator='\t'):
     # input comes from STDIN (standard input)
 
     ds = bolt.io.MemoryDataset.load("examples.npy", verbose=0)
-    original_instances = ds.instances[ds._idx]
+    instances = ds.instances[ds._idx]
+    task_masks = None
+    if os.path.exists("task_masks.pkl"):
+        f = open("task_masks.pkl", "rb")
+        task_masks = pickle.load(f)
+        f.close()
 
     for line in sys.stdin.xreadlines():
         line = line.rstrip()
@@ -62,22 +60,24 @@ def main(separator='\t'):
         line = line.split("\t")[-1]
         params = json.loads(line)
         taskid = params[u"taskid"]
-        auxtask = eval(params[u"task"])
-        reg = params[u"reg"]
-        alpha = params.get(u"alpha", 0.85)
-        norm = params.get(u"norm", 3)
-        n_iter = params.get(u"n_iter", 10**6)
+        auxtask = np.array(params[u"task"])
+        trainer = eval(params[u"trainer"])
 
-        instances = copy.deepcopy(original_instances)
+        # label according to auxtask
         labels = util.autolabel(instances, auxtask)
-        util.mask(instances, auxtask)
-        maskedds = bolt.io.MemoryDataset(ds.dim, instances, labels)
-        w = train(maskedds, reg=reg, alpha=alpha, norm=norm, n_iter=n_iter)
-        if norm == 2:
-            w[w<0.0] = 0.0
-        
-        sw = serialize(w)  
-        print >> sys.stdout, "%d\t%s" % (taskid,sw)
+
+        # mask features (either only auxtask or provided masks)
+        mask = np.ones((ds.dim,), dtype=np.int32, order="C")
+        if task_masks != None:
+            mask[task_masks[taskid]] = 0
+        else:
+            mask[auxtask] = 0
+
+        new_dataset = bolt.io.MemoryDataset(ds.dim, instances, labels)
+
+        w = trainer.train_classifier(new_dataset, mask)
+        sw = serialize(w)
+        print >> sys.stdout, "%d\t%s" % (taskid, sw)
 
 
 if __name__ == "__main__":
