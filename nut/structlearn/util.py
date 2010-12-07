@@ -16,53 +16,6 @@ import numpy as np
 
 from itertools import chain
 
-def mask_old(instances, auxtask):
-    """Sets all feature values for the features in
-    auxtask to 0.
-    
-    Parameters
-    ----------
-    instances : array, shape = [n_instances], dtype=bolt.sparsedtype
-        The instances whos features will be masked.
-    auxtask : seq
-        A sequence of features to be masked.
-
-    Returns
-    -------
-    count : int
-        The number of masked feature values.
-    """
-    count = 0
-    for x in instances:
-        indices = x['f0']
-	for idx in auxtask:
-	    if idx in indices:
-		p = np.where(indices == idx)[0]
-		if len(p) > 0:
-		    x['f1'][p] = 0.0
-		    count += 1
-    return count
-
-
-def mask_in1d(instances, task_mask):
-    """Sets all feature values for the features in
-    auxtask to 0.
-    
-    Parameters
-    ----------
-    instances : array, shape = [n_instances], dtype=bolt.sparsedtype
-        The instances whos features will be masked.
-    task_mask : array
-        An array of features to be masked.
-
-    """
-    print "mask begin"
-    for x in instances:
-        indices = x['f0']
-        mask = np.in1d(indices, task_mask)
-        x['f1'][mask] = 0.0
-    print "mask end"
-
 
 def mask(instances, task_mask):
     """Sets all feature values for the features in

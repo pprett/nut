@@ -16,16 +16,16 @@ import numpy as np
 import re
 import bolt
 
-import pdb
-
 from collections import defaultdict
 from itertools import islice
+from pprint import pprint
 
 from ..io import conll, compressed_dump, compressed_load
 from ..tagger import tagger
 from ..structlearn.pivotselection import FreqSelector
 from ..nut import structlearn
 from ..util import timeit
+from ..structlearn.util import count
 
 
 __version__ = "0.1"
@@ -78,6 +78,9 @@ class ASO(object):
         """
         pattern = re.compile("_|=")
         masks = {}
+        print "_"*80
+        print "Masked features stats"
+        print 
         for token in tokens:
             masked_features = set((idx for fname, idx in self.fidx_map.iteritems()
                                    if token in pattern.split(fname)[2:]))
@@ -109,11 +112,18 @@ class ASO(object):
         """
         # get m most frequent current, left, and right words
         aux_tasks = []
+        counts = count(dataset)
+        print "_"*80
+        print "Auxiliary problem stats"
+        print
         for prefix in ["word_unigram_cur=", "word_unigram_pre=",
                        "word_unigram_post="]:
             preselection = self.preselect_tasks(prefix)
-            aux_tasks.extend(list(islice(
-                FreqSelector(0).select(dataset, preselection), m)))
+            tmp = list(islice(FreqSelector(0).select(dataset, preselection), m))
+            print ", ".join(["%s (%d)" % (self.vocabulary[tmp[i]], counts[tmp[i]])
+                             for i in range(10)])
+            print
+            aux_tasks.extend(tmp)
 
         masks = self.create_masks()
         task_masks = [masks["cur"]]*m + [masks["pre"]]*m + [masks["post"]]*m
@@ -156,23 +166,24 @@ class ASO(object):
         dataset = tagger.build_examples(reader, self.fd, self.hd,
                                         self.fidx_map, self.tags,
                                         pos_prefixes=["NN", "JJ"])
-        print "|examples|: %d" % dataset.n
         aux_tasks, task_masks = self.create_aux_tasks(dataset, m)
+        print "_"*80
+        print "|examples|: %d" % dataset.n
         print "|aux_tasks|: %d" % len(aux_tasks)
         print "|task_masks|: %d" % len(task_masks)
-        print type(task_masks)
         
         # self.print_tasks(aux_tasks)
         feature_types = self.create_feature_type_splits()
+        print "_"*80
         print "Feature types:"
-        print feature_types
+        pprint(feature_types)
         print
         self.feature_types = feature_types
 
         #trainer = structlearn.auxtrainer.ElasticNetTrainer(0.00001, 0.85,
         #                                                   10**7)
 
-        trainer = structlearn.auxtrainer.L2Trainer(0.00001, 10**7,
+        trainer = structlearn.auxtrainer.L2Trainer(0.00001, 10**6,
                                                    truncate=True)
 
         strategy = structlearn.auxstrategy.HadoopTrainingStrategy()
@@ -421,7 +432,7 @@ def train():
         print "build vocabulary..."
         # FIXME use minc+2 for unlabeled data.
         V, T = tagger.build_vocabulary(readers, fd, hd, minc=[options.minc,
-                                                              options.minc + 1],
+                                                              options.minc + 4],
                                        use_eph=options.use_eph)
         print "|V|:", len(V)
         print "|T|:", len(T)

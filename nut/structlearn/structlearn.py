@@ -133,7 +133,7 @@ class StructLearner(object):
                                                          self.classifier_trainer,
                                                          inverted_index=self.inverted_index)
         density = W.nnz / float(W.shape[0] * W.shape[1])
-        print "density of W: %.4f" % density
+        print "density of W: %.8f" % density
         self.thetat = self.compute_svd(W)
         print "shape of Theta^T = (%d,%d)" % self.thetat.shape
 
