@@ -11,7 +11,6 @@ pivotselection
 """
 from __future__ import division
 import numpy as np
-import bolt
 
 from abc import ABCMeta, abstractmethod
 from itertools import cycle, izip, count, islice
@@ -19,6 +18,7 @@ from operator import itemgetter
 
 import util
 
+from ..externals import bolt
 from ..util import trace, timeit
 
 class PivotSelector(object):

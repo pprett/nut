@@ -6,11 +6,10 @@
 
 import numpy as np
 
-import bolt
-
 from collections import defaultdict
 
 from .util import timeit
+from .externals import bolt
 
 def parse_bow(line):
     tokens = [tf.split(':') for tf in line.rstrip().split(' ')]

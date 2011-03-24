@@ -9,7 +9,7 @@ TODO doc
 """
 import sys
 import numpy as np
-import bolt
+from ..externals import bolt
 
 from collections import defaultdict
 from itertools import chain, repeat, izip

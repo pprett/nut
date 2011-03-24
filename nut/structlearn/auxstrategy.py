@@ -14,7 +14,6 @@ A module containing different trainer strategies for the auxiliary tasks.
 from __future__ import division
 
 import sys
-import bolt
 import numpy as np
 import subprocess
 import shlex
@@ -35,6 +34,7 @@ from collections import defaultdict
 from ..structlearn import util
 from ..util import timeit, trace
 from ..externals.joblib import Parallel, delayed
+from ..externals import bolt
 
 
 class Error(Exception):

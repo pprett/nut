@@ -8,19 +8,20 @@
 auxtrainer
 ==========
 
-A module containing different trainers for the auxiliary tasks. 
+A module containing different trainers for the auxiliary tasks.c
 
 """
 from __future__ import division
 
 import math
-import bolt
+
+from ..externals import bolt
 
 
 class AuxTrainer(object):
 
     def train_classifier(self, ds, mask):
-	raise NotImplementedError("AuxTrainer is an abstract class")
+        raise NotImplementedError("AuxTrainer is an abstract class")
 
     def __repr__(self):
         class_name = self.__class__.__name__
@@ -46,42 +47,42 @@ class ElasticNetTrainer(AuxTrainer):
     """
 
     def __init__(self, reg, alpha, num_iterations):
-	self.reg = reg
-	self.alpha = alpha
-	self.num_iterations = num_iterations
-	
+        self.reg = reg
+        self.alpha = alpha
+        self.num_iterations = num_iterations
+
     def train_classifier(self, ds, mask):
-	epochs = int(math.ceil(self.num_iterations / ds.n))
-	model = bolt.LinearModel(ds.dim, biasterm=False)
-	loss = bolt.ModifiedHuber()
-	sgd = bolt.SGD(loss, self.reg, epochs=epochs, norm=3,
-		       alpha = self.alpha)
-	sgd.train(model, ds, verbose=0, shuffle=False, mask=mask)
-	return model.w
+        epochs = int(math.ceil(self.num_iterations / ds.n))
+        model = bolt.LinearModel(ds.dim, biasterm=False)
+        loss = bolt.ModifiedHuber()
+        sgd = bolt.SGD(loss, self.reg, epochs=epochs, norm=3,
+                       alpha=self.alpha)
+        sgd.train(model, ds, verbose=0, shuffle=False, mask=mask)
+        return model.w
 
 
 class L2Trainer(AuxTrainer):
     """Trains the auxiliary classifiers using L2 regularization.
 
     If `truncate` is True, negative weights are set to zero.
-    See [Ando and Zhang, 2005] or [Blitzer et al, 2006]. 
+    See [Ando and Zhang, 2005] or [Blitzer et al, 2006].
     """
 
     def __init__(self, reg, num_iterations, truncate=False):
-	self.reg = reg
-	self.num_iterations = num_iterations
-	self.truncate = truncate
+        self.reg = reg
+        self.num_iterations = num_iterations
+        self.truncate = truncate
 
     def train_classifier(self, ds, mask):
-	epochs = int(math.ceil(self.num_iterations / ds.n))
-	model = bolt.LinearModel(ds.dim, biasterm=False)
-	loss = bolt.ModifiedHuber()
-	sgd = bolt.SGD(loss, self.reg, epochs=epochs, norm=2)
-	sgd.train(model, ds, verbose=0, shuffle=False, mask=mask)
-	w = model.w
-	if self.truncate:
-	    w[w<0.0] = 0.0
-	return w
+        epochs = int(math.ceil(self.num_iterations / ds.n))
+        model = bolt.LinearModel(ds.dim, biasterm=False)
+        loss = bolt.ModifiedHuber()
+        sgd = bolt.SGD(loss, self.reg, epochs=epochs, norm=2)
+        sgd.train(model, ds, verbose=0, shuffle=False, mask=mask)
+        w = model.w
+        if self.truncate:
+            w[w < 0.0] = 0.0
+        return w
 
 
 class L1Trainer(AuxTrainer):
@@ -89,13 +90,13 @@ class L1Trainer(AuxTrainer):
     """
 
     def __init__(self, reg, num_iterations):
-	self.reg = reg
-	self.num_iterations = num_iterations
+        self.reg = reg
+        self.num_iterations = num_iterations
 
     def train_classifier(self, ds, mask):
-	epochs = int(math.ceil(self.num_iterations / ds.n))
-	model = bolt.LinearModel(ds.dim, biasterm=False)
-	loss = bolt.ModifiedHuber()
-	sgd = bolt.SGD(loss, self.reg, epochs=epochs, norm=1)
-	sgd.train(model, ds, verbose=0, shuffle=False, mask=mask)
-	return model.w
+        epochs = int(math.ceil(self.num_iterations / ds.n))
+        model = bolt.LinearModel(ds.dim, biasterm=False)
+        loss = bolt.ModifiedHuber()
+        sgd = bolt.SGD(loss, self.reg, epochs=epochs, norm=1)
+        sgd.train(model, ds, verbose=0, shuffle=False, mask=mask)
+        return model.w

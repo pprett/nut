@@ -15,7 +15,7 @@ import sys
 import numpy as np
 import math
 import optparse
-import bolt
+
 
 from itertools import islice, ifilter
 from functools import partial
@@ -29,6 +29,7 @@ from ..io import compressed_dump, compressed_load
 from ..bow import vocabulary, disjoint_voc, load
 from ..util import timeit
 from ..structlearn import standardize
+from ..externals import bolt
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __version__ = "0.1"

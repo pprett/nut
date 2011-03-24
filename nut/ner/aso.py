@@ -14,7 +14,6 @@ import sys
 import optparse
 import numpy as np
 import re
-import bolt
 
 from collections import defaultdict
 from itertools import islice
@@ -26,7 +25,7 @@ from ..structlearn.pivotselection import FreqSelector
 from ..nut import structlearn
 from ..util import timeit
 from ..structlearn.util import count
-
+from ..externals import bolt
 
 __version__ = "0.1"
 

@@ -8,8 +8,7 @@ To install nut you need:
 
    * Python 2.5 or 2.6
    * Numpy (>= 1.1)
-   * Bolt  (feature-mask branch) [#f1]_
-   * Sparsesvd (>= 0.1.4) [#f2]_
+   * Sparsesvd (>= 0.1.4) [#f1]_
 
 Installation
 ------------
@@ -18,13 +17,9 @@ To clone the repository run,
 
    git clone git://github.com/pprett/nut.git
 
-To build nut simply run,
+To build the extension modules run,
 
-   python setup.py build
-
-To install nut on your system, use
-
-   python setup.py install
+   python setup.py build_ext --inplace
 
 Documentation
 -------------
@@ -33,11 +28,12 @@ CLSCL
 ~~~~~
 
 An implementation of Cross-Language Structural Correspondence Learning (CLSCL) 
-for cross-language text classification. See [Prettenhofer and Stein, 2010] for 
-a detailed description. 
+for cross-language text classification. See [Prettenhofer and Stein, 2010] 
+for a detailed description and [Prettenhofer and Stein, 2011] for more 
+experiments and enhancements.
 
 The data for cross-language sentiment classification that has been used in the above
-study can be found here [#f3]_.
+study can be found here [#f2]_.
 
 clscl_train
 ???????????
@@ -70,7 +66,7 @@ Usage::
     learn took 903.588 sec
     project took 175.483 sec
 
-.. note:: If you have access to a hadoop cluster, you can use `--strategy=hadoop` to train the pivot classifiers even faster.
+.. note:: If you have access to a hadoop cluster, you can use `--strategy=hadoop` to train the pivot classifiers even faster, however, make sure that the hadoop nodes have Bolt (feature-mask branch) [#f3]_ installed. 
 
 clscl_predict
 ?????????????
@@ -116,11 +112,13 @@ You can pipe the output directly to `conlleval` to assess the model performance:
 References
 ----------
 
-.. [#f1] https://github.com/pprett/bolt/tree/feature-mask
-.. [#f2] http://pypi.python.org/pypi/sparsesvd/0.1.4
-.. [#f3] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
+.. [#f1] http://pypi.python.org/pypi/sparsesvd/0.1.4
+.. [#f2] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
+.. [#f3] https://github.com/pprett/bolt/tree/feature-mask
 
 [Prettenhofer, P. and Stein, B., 2010] `Cross-Language Text Classification using Structural Correspondence Learning <http://www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
+
+[Prettenhofer, P. and Stein, B., 2011] `Cross-lingual Adaptation using Structural Correspondence Learning <http://tist.acm.org/papers/TIST-2010-06-0137.R1.html>`_. ACM TIST (to appear). `[preprint] <http://arxiv.org/pdf/1008.0716v2>`_
 
 [Ratinov, L. and Roth, D., 2009] `Design challenges and misconceptions in named entity recognition <http://www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
 

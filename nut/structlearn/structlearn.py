@@ -12,13 +12,13 @@ structlearn
 from __future__ import division
 
 import numpy as np
-import bolt
 import sparsesvd
 from collections import defaultdict
 from itertools import chain
 
 from ..util import timeit, trace
 from .auxstrategy import HadoopTrainingStrategy
+from ..externals import bolt
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 
