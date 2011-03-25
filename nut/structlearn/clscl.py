@@ -219,7 +219,7 @@ class CLSCLTrainer(object):
         print("|pivots| = %d" % len(pivots))
         ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
                                           self.t_unlabeled))
-        ds.shuffle(9)
+        ds.shuffle(13)
         struct_learner = structlearn.StructLearner(k, ds, pivots,
                                                    self.trainer,
                                                    self.strategy)
@@ -424,11 +424,12 @@ def train():
     print("|V| = %d" % dim)
 
     # Load labeled and unlabeled data
-    s_train = load(fname_s_train, s_voc, dim)
-    s_unlabeled = load(fname_s_unlabeled, s_voc, dim,
+    s_train, classes = load(fname_s_train, s_voc, dim)
+    s_unlabeled, _ = load(fname_s_unlabeled, s_voc, dim,
                        maxlines=options.max_unlabeled)
-    t_unlabeled = load(fname_t_unlabeled, t_voc, dim,
+    t_unlabeled, _ = load(fname_t_unlabeled, t_voc, dim,
                        maxlines=options.max_unlabeled)
+    print("classes = {%s}" % ",".join(classes))
     print("|s_train| = %d" % s_train.n)
     print("|s_unlabeled| = %d" % s_unlabeled.n)
     print("|t_unlabeled| = %d" % t_unlabeled.n)
@@ -480,17 +481,27 @@ def predict():
     print("|V_S| = %d\n|V_T| = %d" % (len(s_voc), len(t_voc)))
     print("|V| = %d" % dim)
 
-    s_train = load(fname_s_train, s_voc, dim)
-    t_test = load(fname_t_test, t_voc, dim)
+    s_train, classes = load(fname_s_train, s_voc, dim)
+    t_test, _ = load(fname_t_test, t_voc, dim)
+
+    print("classes = {%s}" % ",".join(classes))
+    n_classes = len(classes)
 
     cl_train = model.project(s_train)
     cl_test = model.project(t_test)
 
+    cl_train.shuffle(1)
     epochs = int(math.ceil(10**6 / cl_train.n))
-    model = bolt.LinearModel(cl_train.dim, biasterm=False)
     loss = bolt.ModifiedHuber()
     sgd = bolt.SGD(loss, reg, epochs=epochs, norm=2)
-    cl_train.shuffle(1)
-    sgd.train(model, cl_train, verbose=0, shuffle=False)
+    if n_classes == 2:
+        model = bolt.LinearModel(cl_train.dim, biasterm=False)
+        trainer = sgd
+    else:
+        model = bolt.GeneralizedLinearModel(cl_train.dim, n_classes,
+                                            biasterm=False)
+        trainer = bolt.trainer.OVA(sgd)
+        
+    trainer.train(model, cl_train, verbose=0, shuffle=False)
     acc = 100.0 - bolt.eval.errorrate(model, cl_test)
     print "ACC: %.2f" % acc

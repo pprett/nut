@@ -53,8 +53,8 @@ def disjoint_voc(s_voc, t_voc):
     return s_voc, t_voc, len(s_voc) + len(t_voc)
 
 @timeit
-def load(fname, voc, dim, maxlines = -1):
-    label_map = {'positive':1,'negative':-1,'unlabeled':0}
+def load(fname, voc, dim, maxlines=-1):
+    #label_map = {'positive':1,'negative':-1,'unlabeled':0}
     #idx_to_term = dict(((idx, term) for term, idx in voc.items()))
     instances = []
     labels = []
@@ -69,7 +69,11 @@ def load(fname, voc, dim, maxlines = -1):
 	    if norm > 0.0:
 		x['f1'] /= norm
 	    instances.append(x)
-	    labels.append(label_map[label])
+	    labels.append(label)
     instances = bolt.io.fromlist(instances, np.object)
-    labels = bolt.io.fromlist(labels, np.float32)
-    return bolt.MemoryDataset(dim, instances, labels)
+    labels = np.array(labels)
+    classes = np.unique(labels)
+    labels = np.searchsorted(classes, labels).astype(np.float32)
+    if len(classes) == 2:
+        labels[labels == 0] = -1
+    return bolt.MemoryDataset(dim, instances, labels), classes
