@@ -393,8 +393,6 @@ def train_args_parser():
 def train():
     """Training script for CLSCL.
 
-    FIXME: works for binary classification only.
-    TODO: multi-class classification.
     TODO: different translators.
     """
     parser = train_args_parser()
@@ -501,7 +499,8 @@ def predict():
         model = bolt.GeneralizedLinearModel(cl_train.dim, n_classes,
                                             biasterm=False)
         trainer = bolt.trainer.OVA(sgd)
-        
+
     trainer.train(model, cl_train, verbose=0, shuffle=False)
     acc = 100.0 - bolt.eval.errorrate(model, cl_test)
     print "ACC: %.2f" % acc
+

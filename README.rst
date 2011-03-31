@@ -79,11 +79,15 @@ Usage::
     |V_S| = 64682
     |V_T| = 106024
     |V| = 170706
-    load took 0.625 sec
-    load took 0.579 sec
-    project took 3.012 sec
-    project took 2.805 sec
-    ACC: 82.85
+    load took 0.681 sec
+    load took 0.659 sec
+    classes = {negative,positive}
+    project took 2.498 sec
+    project took 2.716 sec
+    project took 2.275 sec
+    project took 2.492 sec
+    ACC: 83.05
+
 
 Named-Entity Recognition
 ~~~~~~~~~~~~~~~~~~~~~~~~
