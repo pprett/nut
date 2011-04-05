@@ -519,10 +519,10 @@ def predict():
     fname_t_test = argv[2]
     reg = float(options.reg)
 
-    model = compressed_load(fname_model)
+    clscl_model = compressed_load(fname_model)
 
-    s_voc = model.s_voc
-    t_voc = model.t_voc
+    s_voc = clscl_model.s_voc
+    t_voc = clscl_model.t_voc
     dim = len(s_voc) + len(t_voc)
     print("|V_S| = %d\n|V_T| = %d" % (len(s_voc), len(t_voc)))
     print("|V| = %d" % dim)
@@ -533,10 +533,11 @@ def predict():
     print("classes = {%s}" % ",".join(classes))
     n_classes = len(classes)
 
-    train = model.project(s_train)
-    test = model.project(t_test)
-    del model  # free clscl model
-
+    train = clscl_model.project(s_train)
+    test = clscl_model.project(t_test)
+    
+    del clscl_model  # free clscl model
+    
     epochs = int(math.ceil(10.0**6 / train.n))
     loss = bolt.ModifiedHuber()
     sgd = bolt.SGD(loss, reg, epochs=epochs, norm=2)
