@@ -27,10 +27,9 @@ Documentation
 CLSCL
 ~~~~~
 
-An implementation of Cross-Language Structural Correspondence Learning (CLSCL) 
-for cross-language text classification. See [Prettenhofer and Stein, 2010] 
-for a detailed description and [Prettenhofer and Stein, 2011] for more 
-experiments and enhancements.
+An implementation of Cross-Language Structural Correspondence Learning (CLSCL). 
+See [Prettenhofer and Stein, 2010] for a detailed description and 
+[Prettenhofer and Stein, 2011] for more experiments and enhancements.
 
 The data for cross-language sentiment classification that has been used in the above
 study can be found here [#f2]_.
@@ -99,10 +98,32 @@ ner_train
 
 Training script for NER. See ./ner_train --help for further details. 
 
-To train a conditional markov model with a greedy left-to-right decoder, the feature templates 
-of [Rationov & Roth, 2009] and extended prediction history (see [Ratinov & Roth, 2009]) use::
+To train a conditional markov model with a greedy left-to-right decoder, the feature 
+templates of [Rationov & Roth, 2009] and extended prediction history 
+(see [Ratinov & Roth, 2009]) use::
 
-    ./ner_train clner/en/conll03/train.iob2 model_rr09.bz2 -f rr09 -r 0.00001 -E 100 --shuffle --eph 
+    ./ner_train clner/en/conll03/train.iob2 model_rr09.bz2 -f rr09 -r 0.00001 -E 100 --shuffle --eph
+    ________________________________________________________________________________
+    Feature extraction
+    
+    min count:  1
+    use eph:  True
+    build_vocabulary took 24.662 sec
+    feature_extraction took 25.626 sec
+    creating training examples... build_examples took 42.998 sec
+    [done]
+    ________________________________________________________________________________
+    Training
+    
+    num examples: 203621
+    num features: 553249
+    num classes: 9
+    classes:  ['I-LOC', 'B-ORG', 'O', 'B-PER', 'I-PER', 'I-MISC', 'B-MISC', 'I-ORG', 'B-LOC']
+    reg: 0.00001000
+    epochs: 100
+    9 models trained in 239.28 seconds. 
+    train took 282.374 sec
+    
 
 ner_predict
 ???????????
@@ -111,6 +132,17 @@ You can use the prediction script to tag new sentences and write the output to a
 You can pipe the output directly to `conlleval` to assess the model performance::
 
     ./ner_predict model_rr09.bz2 clner/en/conll03/test.iob2 - | clner/scripts/conlleval
+    loading tagger... [done]
+    use_eph:  True
+    use_aso:  False
+    processed input in 11.2883s sec.
+    processed 46435 tokens with 5648 phrases; found: 5605 phrases; correct: 4799.
+    accuracy:  96.78%; precision:  85.62%; recall:  84.97%; FB1:  85.29
+                  LOC: precision:  87.29%; recall:  88.91%; FB1:  88.09  1699
+                 MISC: precision:  79.85%; recall:  75.64%; FB1:  77.69  665
+                  ORG: precision:  82.90%; recall:  78.81%; FB1:  80.80  1579
+                  PER: precision:  88.81%; recall:  91.28%; FB1:  90.03  1662
+
 
 
 References
@@ -120,9 +152,9 @@ References
 .. [#f2] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
 .. [#f3] https://github.com/pprett/bolt/tree/feature-mask
 
-[Prettenhofer, P. and Stein, B., 2010] `Cross-Language Text Classification using Structural Correspondence Learning <http://www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
+[Prettenhofer, P. and Stein, B., 2010] `Cross-language text classification using structural correspondence learning <http://www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
 
-[Prettenhofer, P. and Stein, B., 2011] `Cross-lingual Adaptation using Structural Correspondence Learning <http://tist.acm.org/papers/TIST-2010-06-0137.R1.html>`_. ACM TIST (to appear). `[preprint] <http://arxiv.org/pdf/1008.0716v2>`_
+[Prettenhofer, P. and Stein, B., 2011] `Cross-lingual adaptation using structural correspondence learning <http://tist.acm.org/papers/TIST-2010-06-0137.R1.html>`_. ACM TIST (to appear). `[preprint] <http://arxiv.org/pdf/1008.0716v2>`_
 
 [Ratinov, L. and Roth, D., 2009] `Design challenges and misconceptions in named entity recognition <http://www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
 

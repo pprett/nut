@@ -160,7 +160,7 @@ def train():
     model.train(train_reader, reg=options.reg, epochs=options.epochs,
                 shuffle=options.shuffle)
     if options.stats:
-        print "------------------------------"
+        print "_" * 80
         print " Stats\n"
         model.describe(k=40)
         nnz = 0

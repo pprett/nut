@@ -15,7 +15,7 @@ import sys
 import numpy as np
 import math
 import optparse
-
+import copy
 
 from itertools import islice, ifilter
 from functools import partial
@@ -30,6 +30,7 @@ from ..bow import vocabulary, disjoint_voc, load
 from ..util import timeit
 from ..structlearn import standardize
 from ..externals import bolt
+from ..externals.joblib import Parallel, delayed
 
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 __version__ = "0.1"
@@ -455,21 +456,68 @@ def train():
     compressed_dump(argv[6], model)
 
 
-def predict():
-    """Prediction script for CLSCL.
-
-    Usage: ./clscl_predict strain model ttest reg
+def predict_args_parser():
+    """Create argument and option parser for the
+    prediction script.
     """
-    argv = sys.argv[1:]
-    if len(argv) != 4:
-        print "Error: wrong number of arguments. "
-        print "Usage: %s strain model ttest reg" % sys.argv[0]
-        sys.exit(-2)
+    description = """Prefixes `s_` and `t_` refer to source and target language
+    , resp. Train and unlabeled files are expected to be in Bag-of-Words format.
+    """
+    parser = optparse.OptionParser(usage="%prog [options] " \
+                                   "s_train_file " \
+                                   "model_file " \
+                                   "t_test_file",
+                                   version="%prog " + __version__,
+                                   description=description)
+
+    parser.add_option("-v", "--verbose",
+                      dest="verbose",
+                      help="verbose output",
+                      default=1,
+                      metavar="[0,1,2]",
+                      type="int")
+
+    parser.add_option("-R", "--repetition",
+                      dest="repetition",
+                      help="Repeat training `repetition` times and " \
+                      "report avg. error.",
+                      default=10,
+                      metavar="int",
+                      type="int")
+
+    parser.add_option("-r", "--reg",
+                      dest="reg",
+                      help="regularization parameter lambda. ",
+                      default=0.01,
+                      metavar="float",
+                      type="float")
+
+    parser.add_option("--n-jobs",
+                      dest="n_jobs",
+                      help="The number of processes to fork.",
+                      default=1,
+                      metavar="int",
+                      type="int")
+
+    return parser
+
+
+def clone(my_object):
+    """Returns a deep copy of `my_object`. """
+    return copy.deepcopy(my_object)
+
+
+def predict():
+    """Prediction script for CLSCL.  """
+    parser = predict_args_parser()
+    options, argv = parser.parse_args()
+    if len(argv) != 3:
+        parser.error("incorrect number of arguments (use `--help` for help).")
 
     fname_s_train = argv[0]
     fname_model = argv[1]
     fname_t_test = argv[2]
-    reg = float(argv[3])
+    reg = float(options.reg)
 
     model = compressed_load(fname_model)
 
@@ -485,22 +533,28 @@ def predict():
     print("classes = {%s}" % ",".join(classes))
     n_classes = len(classes)
 
-    cl_train = model.project(s_train)
-    cl_test = model.project(t_test)
+    train = model.project(s_train)
+    test = model.project(t_test)
+    del model  # free clscl model
 
-    cl_train.shuffle(1)
-    epochs = int(math.ceil(10**6 / cl_train.n))
+    epochs = int(math.ceil(10.0**6 / train.n))
     loss = bolt.ModifiedHuber()
     sgd = bolt.SGD(loss, reg, epochs=epochs, norm=2)
     if n_classes == 2:
-        model = bolt.LinearModel(cl_train.dim, biasterm=False)
+        model = bolt.LinearModel(train.dim, biasterm=False)
         trainer = sgd
     else:
-        model = bolt.GeneralizedLinearModel(cl_train.dim, n_classes,
+        model = bolt.GeneralizedLinearModel(train.dim, n_classes,
                                             biasterm=False)
         trainer = bolt.trainer.OVA(sgd)
 
-    trainer.train(model, cl_train, verbose=0, shuffle=False)
-    acc = 100.0 - bolt.eval.errorrate(model, cl_test)
-    print "ACC: %.2f" % acc
+    scores = Parallel(n_jobs=options.n_jobs, verbose=options.verbose)(
+                delayed(_predict_score)(i, trainer, clone(model), train, test)
+        for i in range(options.repetition))
+    print "ACC: %.2f (%.2f)" % (np.mean(scores), np.std(scores))
 
+
+def _predict_score(i, trainer, model, train, test):
+    train.shuffle(i)
+    trainer.train(model, train, verbose=0, shuffle=False)
+    return 100.0 - bolt.eval.errorrate(model, test)

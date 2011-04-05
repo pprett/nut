@@ -35,7 +35,7 @@ def vocabulary(*bowfnames, **kargs):
     maxlines = kargs.get("maxlines", -1)
     fd = defaultdict(int)
     for fname in bowfnames:
-	with open(fname) as f:
+        with open(fname) as f:
 	    for i, line in enumerate(f):
 		if maxlines != -1 and i >= maxlines:
 		    break
@@ -54,8 +54,8 @@ def disjoint_voc(s_voc, t_voc):
 
 @timeit
 def load(fname, voc, dim, maxlines=-1):
-    #label_map = {'positive':1,'negative':-1,'unlabeled':0}
-    #idx_to_term = dict(((idx, term) for term, idx in voc.items()))
+    """
+    """
     instances = []
     labels = []
     with open(fname) as f:

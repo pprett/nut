@@ -244,8 +244,9 @@ class GreedyTagger(Tagger):
         Builds up various data structures such as the vocabulary and
         the tag set.
         """
-        print "------------------------------"
-        print "Feature extraction".center(30)
+        print "_" * 80
+        print "Feature extraction"
+        print
         print "min count: ", minc
         print "use eph: ", use_eph
         self.minc = minc
@@ -282,8 +283,9 @@ class GreedyTagger(Tagger):
                 self.V.append("aso_%d" % i)
                 self.fidx_map["aso_%d" % i] = self.aso_model.thetat.shape[0] + i
 
-        print "------------------------------"
-        print "Training".center(30)
+        print "_" * 80
+        print "Training"
+        print
         print "num examples: %d" % dataset.n
         print "num features: %d" % dataset.dim
         print "num classes: %d" % len(T)
