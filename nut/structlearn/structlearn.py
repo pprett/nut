@@ -166,12 +166,11 @@ class StructLearner(object):
             print "A.nnz:", A.nnz
             print "A.shape:", A.shape
             Ut, s, Vt = sparsesvd.sparsesvd(A, k)
-            print "Spectrum:\ns.min()=%f, s.max()=%f" % (s.min(), s.max())
             print "Ut.shape", Ut.shape
-            if np.all(s == 0.0):
+            if s.shape[0] == 0 or np.all(s == 0.0):
                 print "skip block (%d, %d)" % (f_min, f_max)
                 continue
-
+            print "Spectrum: %.4f - %.4f" % (s.min(), s.max())
             # check feature span of Ut
             span = (f_max + 1) - f_min
             assert Ut.shape[1] == span

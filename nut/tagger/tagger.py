@@ -35,6 +35,8 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
         reader in `readers`.
     use_eph : bool
         Whether or not extended prediction history should be used.
+    verbose : int
+        Verbose output (report when processed 100k lines).
 
     Returns
     -------
@@ -51,10 +53,7 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
     else:
         minc = repeat(minc)
     tags = set()
-
     i = 0
-    if verbose > 0:
-        print "process sentences..."
     all_vocabulary = set()
     for reader, minc in izip(readers, minc):
         vocabulary = defaultdict(int)
@@ -66,7 +65,7 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
                 if tag != "Unk":
                     tags.add(tag)
             length = len(untagged_sent)
-            for index in range(length):
+            for index in xrange(length):
                 features = fd(untagged_sent, index, length)
                 if not reader.raw:
                     pre_tags = tag_seq[:index]
@@ -79,7 +78,7 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
                 i += 1
                 if i % 100000 == 0:
                     if verbose > 0:
-                        print i
+                        print i,
         all_vocabulary.update(set((fx for fx, c in vocabulary.iteritems()
                                    if c >= minc)))
     # If extended prediction history is used add |tags| features.
@@ -131,7 +130,7 @@ def asinstance(enc_features, fidx_map):
 
 @timeit
 def build_examples(reader, fd, hd, fidx_map, T, use_eph=False,
-                   pos_prefixes=[], pos_idx=1):
+                   pos_prefixes=[], pos_idx=1, verbose=False):
     """Build feature vectors from the given reader.
 
     This method creates a feature vector for each token in the reader.
@@ -176,7 +175,7 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False,
                     dist = [("eph", T[i], v) for i, v in enumerate(dist)]
                     enc_features = chain(enc_features, encode_numeric(dist))
                 # update EPH
-                if tag != "O" and tag != "Unk":
+                if tag != "O":  # XXX and tag != "Unk":
                     eph.push(w, tag)
 
             # Encode unlabeled token as -1
@@ -188,6 +187,10 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False,
             instance = asinstance(enc_features, fidx_map)
             instances.append(instance)
             labels.append(tag)
+            i += 1
+            if i % 10000 == 0:
+                if verbose > 0:
+                    print i,
     instances = bolt.fromlist(instances, np.object)
     labels = bolt.fromlist(labels, np.float64)
     return bolt.io.MemoryDataset(len(fidx_map), instances, labels)

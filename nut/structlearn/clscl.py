@@ -19,6 +19,7 @@ import copy
 
 from itertools import islice, ifilter
 from functools import partial
+from pprint import pprint
 
 from ..structlearn import pivotselection
 from ..structlearn import util
@@ -150,7 +151,8 @@ class CLSCLTrainer(object):
     """
 
     def __init__(self, s_train, s_unlabeled, t_unlabeled,
-                 pivotselector, pivottranslator, trainer, strategy):
+                 pivotselector, pivottranslator, trainer, strategy,
+                 verbose=0):
         self.s_train = s_train
         self.s_unlabeled = s_unlabeled
         self.t_unlabeled = t_unlabeled
@@ -158,6 +160,7 @@ class CLSCLTrainer(object):
         self.pivottranslator = pivottranslator
         self.trainer = trainer
         self.strategy = strategy
+        self.verbose = verbose
 
     @timeit
     def select_pivots(self, m, phi):
@@ -192,9 +195,12 @@ class CLSCLTrainer(object):
         pivots = (np.array([ws, wt]) for ws, wt in candidates \
                          if counts[ws] >= phi and counts[wt] >= phi)
         pivots = [pivot for pivot in islice(pivots, m)]
-        #terms = [(self.s_ivoc[ws],self.t_ivoc[wt]) for ws,wt in pivots]
-        #for term in terms[:50]:
-        #    print term
+        if self.verbose > 1:
+            terms = [(self.s_ivoc[ws],self.t_ivoc[wt]) for ws, wt in pivots]
+            print "_" * 80
+            print "Pivots:"
+            print
+            pprint(terms)
 
         return pivots
 
@@ -446,7 +452,8 @@ def train():
     clscl_trainer = CLSCLTrainer(s_train, s_unlabeled,
                                  t_unlabeled, pivotselector,
                                  translator, trainer,
-                                 strategy_factory[options.strategy]())
+                                 strategy_factory[options.strategy](),
+                                 verbose=options.verbose)
     clscl_trainer.s_ivoc = s_ivoc
     clscl_trainer.t_ivoc = t_ivoc
     model = clscl_trainer.train(options.m, options.phi, options.k)

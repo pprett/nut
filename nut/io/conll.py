@@ -22,12 +22,7 @@ class Conll03Reader(object):
     """Corpus reader for CoNLL 2003 shared task on
     Named Entity Recognition.
 
-    XXX Assumes that files are in IOB1 encoding.
-
-    If the file name of `path` ends with 'raw', or
-    starts with either 'raw' or 'unlabeled', the data
-    is assumed to contain no tags and 'Unk' is
-    returned as tag. 
+    
 
     Parameters
     ----------
@@ -37,8 +32,11 @@ class Conll03Reader(object):
         The language of the text (either 'en' or 'de'). 
     iob : int, 1 or 2 or 3
         The iob encoding to be used.
+    raw : bool
+        True if file is unlabeled (missing tag column).
+        All tokens are given the tag `Unk`.
     """
-    def __init__(self, path, lang, iob=1):
+    def __init__(self, path, lang, iob=1, raw=False):
         self._path = os.path.normpath(path)
         fname = os.path.split(self._path)[-1]
         if lang == "en":
@@ -51,9 +49,7 @@ class Conll03Reader(object):
             raise ValueError("iob must be either 0, 1, or 2.")
         self.iob = iob
         self.raw = False
-        if fname.endswith("raw") or fname.startswith("unlabeled") \
-               or fname.startswith("raw"):
-            self.raw = True
+        self.raw = raw
 
     def __iter__(self):
         """Iterate over the corpus; i.e. tokens.

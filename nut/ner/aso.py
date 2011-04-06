@@ -9,6 +9,7 @@ This module implements Alternating Structural Optimization (ASO), a semi-
 supervised learning technique proposed by Ando and Zhang (2005) for
 named entity recognition (NER).
 """
+from __future__ import division
 
 import sys
 import optparse
@@ -23,7 +24,7 @@ from ..io import conll, compressed_dump, compressed_load
 from ..tagger import tagger
 from ..structlearn.pivotselection import FreqSelector
 from ..nut import structlearn
-from ..util import timeit
+from ..util import timeit, sizeof
 from ..structlearn.util import count
 from ..externals import bolt
 
@@ -31,7 +32,7 @@ __version__ = "0.1"
 
 
 class ASO(object):
-    """Alternating structural optimization for Named Entity Recognition.
+    """Alternating structural optimization for named entity recognition.
     """
     def __init__(self, fd, hd, vocabulary, tags, use_eph=False):
         self.fd = fd
@@ -43,6 +44,10 @@ class ASO(object):
                               in enumerate(vocabulary)])
         self.tidx_map = dict([(tag, i) for i, tag in enumerate(tags)])
         self.tag_map = dict([(i, t) for i, t in enumerate(tags)])
+
+        print "sizeof(vocabulary): %.1f MB" % sizeof(self.vocabulary)
+        print "sizeof(fidx_map):   %.1f MB" % sizeof(self.fidx_map)
+        
 
     def preselect_tasks(self, prefix):
         preselection = set()
@@ -124,6 +129,7 @@ class ASO(object):
             print
             aux_tasks.extend(tmp)
 
+        print "|auxtasks| = %d" % len(aux_tasks)
         masks = self.create_masks()
         task_masks = [masks["cur"]]*m + [masks["pre"]]*m + [masks["post"]]*m
         assert len(task_masks) == len(aux_tasks)
@@ -150,7 +156,14 @@ class ASO(object):
             assert indices[i][1]+1 == indices[i+1][0]
         return dict(feature_types)
 
-    def learn(self, reader, m, k):
+    def build_examples(self, reader, verbose=0):
+        dataset = tagger.build_examples(reader, self.fd, self.hd,
+                                        self.fidx_map, self.tags,
+                                        pos_prefixes=["NN", "JJ"],
+                                        verbose=verbose)
+        return dataset
+
+    def learn(self, m, k, verbose=0):
         """Learns the ASO embedding theta.
 
         Parameters
@@ -162,14 +175,18 @@ class ASO(object):
         self
         """
         print "run ASO.learn..."
-        dataset = tagger.build_examples(reader, self.fd, self.hd,
-                                        self.fidx_map, self.tags,
-                                        pos_prefixes=["NN", "JJ"])
+        
+        dataset = self.dataset
+        avg = sum((x.shape[0] for x in dataset.iterinstances()))
+        avg /= float(dataset.n)
+        print "|examples|: %d" % dataset.n
+        print "|features|: %d" % dataset.dim
+        print "Avg. number of features: ", avg
+        print "Size of dataset: %.4f MB" % (dataset.n *
+                                         (4 + avg * (4+4)) / 1024.0 / 1024.0)
         aux_tasks, task_masks = self.create_aux_tasks(dataset, m)
         print "_"*80
-        print "|examples|: %d" % dataset.n
-        print "|aux_tasks|: %d" % len(aux_tasks)
-        print "|task_masks|: %d" % len(task_masks)
+        
         
         # self.print_tasks(aux_tasks)
         feature_types = self.create_feature_type_splits()
@@ -185,8 +202,8 @@ class ASO(object):
         trainer = structlearn.auxtrainer.L2Trainer(0.00001, 10**6,
                                                    truncate=True)
 
-        strategy = structlearn.auxstrategy.HadoopTrainingStrategy()
-        #strategy = structlearn.auxstrategy.ParallelTrainingStrategy(n_jobs=3)
+        #strategy = structlearn.auxstrategy.HadoopTrainingStrategy()
+        strategy = structlearn.auxstrategy.ParallelTrainingStrategy(n_jobs=3)
 
         dataset.shuffle(9)
         struct_learner = structlearn.StructLearner(k, dataset,
@@ -316,7 +333,7 @@ def train_args_parser():
     """Create argument and option parser for the
     training script.
     """
-    description = """%s    """ % str(__file__)
+    description = """Training script for Alternating Structural Optimization. """
     parser = optparse.OptionParser(usage="%prog [options] " \
                                    "train_file unlabeled_file model_file",
                                    version="%prog " + __version__,
@@ -330,45 +347,46 @@ def train_args_parser():
     parser.add_option("-f", "--feature-module",
                       dest="feature_module",
                       help="The module in the features package containing the" \
-                      " `fd` and `hd` functions. [Default: %default].",
+                      " `fd` and `hd` functions. [default %default].",
                       default="rr09",
                       metavar="str",
                       type="str")
     parser.add_option("-m",
                       dest="m",
                       help="Number of auxiliary tasks from left, right, " \
-                      "and current word to create. ",
+                      "and current word to create [default %default]. ",
                       default=1000,
                       metavar="int",
                       type="int")
     parser.add_option("-k",
                       dest="k",
-                      help="Dimensionality of the shared representation.",
+                      help="Dimensionality of the shared representation " \
+                      "[default %default].",
                       default=50,
                       metavar="int",
                       type="int")
     parser.add_option("-r", "--reg",
                       dest="reg",
-                      help="regularization parameter. ",
+                      help="regularization parameter [default %default]. ",
                       default=0.00001,
                       metavar="float",
                       type="float")
     parser.add_option("-E", "--epochs",
                       dest="epochs",
-                      help="Number of training epochs. ",
+                      help="Number of training epochs [default %default]. ",
                       default=100,
                       metavar="int",
                       type="int")
     parser.add_option("--min-count",
                       dest="minc",
-                      help="min number of occurances.",
+                      help="min number of occurances [default %default].",
                       default=1,
                       metavar="int",
                       type="int")
     parser.add_option("--max-unlabeled",
                       dest="max_unlabeled",
                       help="max number of unlabeled documents to read;" \
-                      "-1 for unlimited.",
+                      "-1 for unlimited [default %default].",
                       default=-1,
                       metavar="int",
                       type="int")
@@ -394,6 +412,11 @@ def train_args_parser():
                       help="Re-use an existing model for feature extraction.",
                       metavar="str",
                       type="str")
+    parser.add_option("--no-learn",
+                      action="store_true",
+                      dest="no_learn",
+                      default=False,
+                      help="Just run build_vocabulary and store model.")
     return parser
 
 
@@ -410,9 +433,17 @@ def train():
     f_unlabeled = argv[1]
     f_model = argv[2]
 
+    train_reader = conll.Conll03Reader(f_train, options.lang)
+    unlabeled_reader = conll.Conll03Reader(f_unlabeled, options.lang,
+                                           raw=True)
+
     if options.model:
+        print "_" * 80
+        print "Load model"
         model = compressed_load(options.model)
     else:
+        print "_" * 80
+        print "Build vocabulary"
         # get feature extraction module
         try:
             import_path = "nut.ner.features.%s" % options.feature_module
@@ -424,29 +455,37 @@ def train():
                   "from %s" % options.feature_module
             sys.exit(-2)
 
-        train_reader = conll.Conll03Reader(f_train, options.lang)
-        unlabeled_reader = conll.Conll03Reader(f_unlabeled,
-                                               options.lang)
-        readers = [train_reader, unlabeled_reader]
-        print "build vocabulary..."
         # FIXME use minc+2 for unlabeled data.
-        V, T = tagger.build_vocabulary(readers, fd, hd, minc=[options.minc,
-                                                              options.minc + 4],
-                                       use_eph=options.use_eph)
+        V, T = tagger.build_vocabulary([train_reader, unlabeled_reader],
+                                       fd, hd, minc=[options.minc,
+                                                     options.minc + 4],
+                                       use_eph=options.use_eph,
+                                       verbose=options.verbose)
         print "|V|:", len(V)
         print "|T|:", len(T)
         print
         model = ASO(fd, hd, V, T, use_eph=options.use_eph)
 
-    print "run model.learn"
-    print "m:", options.m
-    print "k:", options.k
-    print
-    model.learn(unlabeled_reader, options.m, options.k)
+    if not hasattr(model, "dataset"):
+        print "_" * 80
+        print "Build examples"
+        print
+        dataset = model.build_examples(unlabeled_reader, verbose=options.verbose)
+        model.dataset = dataset
+
+    if not options.no_learn:
+        print "_" * 80
+        print "Learn theta"
+        print "m:", options.m
+        print "k:", options.k
+        print
+        model.learn(options.m, options.k, verbose=options.verbose)
 
     # Store meta data in model
     model.lang = options.lang
     model.minc = options.minc
 
     # dump the model
+    print "_" * 80
+    print "Dump model"
     compressed_dump(f_model, model)

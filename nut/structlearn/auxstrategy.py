@@ -227,9 +227,9 @@ class HadoopTrainingStrategy(TrainingStrategy):
                                       run_id + "/out.txt")
             W = self._readoutput(run_id + "/out.txt", (dim, m))
             ## FIXME remove below
-            f = open("/tmp/W.pkl", "wb")
-            pickle.dump(W, f, -1)
-            f.close()
+            #f = open("/tmp/W.pkl", "wb")
+            #pickle.dump(W, f, -1)
+            #f.close()
             ## FIXME remove above
             self._rm_hdfs_dir(run_id)
             return W
