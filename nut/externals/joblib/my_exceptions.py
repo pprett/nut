@@ -6,6 +6,9 @@ Exceptions
 # License: BSD 3 clause
 
 import exceptions
+# We tabulate exceptions for sqlite3 also, as we are going to get a
+# lot of these
+import sqlite3
 
 class JoblibException(Exception):
     """ A simple exception with an error message that you can get to.
@@ -65,17 +68,18 @@ def _mk_exception(exception, name=None):
 
 def _mk_common_exceptions():
     namespace = dict()
-    for name in dir(exceptions):
-        obj = getattr(exceptions, name)
-        if isinstance(obj, type) and issubclass(obj, BaseException):
-            try:
-                this_obj, this_name = _mk_exception(obj, name=name)
-                namespace[this_name] = this_obj
-            except TypeError:
-                # Cannot create a consistent method resolution order:
-                # a class that we can't subclass properly, probably
-                # BaseException
-                pass
+    for module in (exceptions, sqlite3):
+        for name in dir(module):
+            obj = getattr(module, name)
+            if isinstance(obj, type) and issubclass(obj, BaseException):
+                try:
+                    this_obj, this_name = _mk_exception(obj, name=name)
+                    namespace[this_name] = this_obj
+                except TypeError:
+                    # Cannot create a consistent method resolution order:
+                    # a class that we can't subclass properly, probably
+                    # BaseException
+                    pass
     return namespace
 
 

@@ -23,14 +23,6 @@ from .logger import Logger, short_format_time
 from .my_exceptions import TransportableException, _mk_exception
 
 ################################################################################
-class WorkerInterrupt(Exception):
-    """ An exception that is not KeyboardInterrupt to allow subprocesses
-        to be interrupted.
-    """
-    pass
-
-
-################################################################################
 
 class SafeFunction(object):
     """ Wraps a function to make it exception with full traceback in
@@ -46,11 +38,6 @@ class SafeFunction(object):
     def __call__(self, *args, **kwargs):
         try:
             return self.func(*args, **kwargs)
-        except KeyboardInterrupt:
-            # We capture the KeyboardInterrupt and reraise it as
-            # something different, as multiprocessing does not
-            # interrupt processing for a KeyboardInterrupt
-            raise WorkerInterrupt()
         except:
             e_type, e_value, e_tb = sys.exc_info()
             text = format_exc(e_type, e_value, e_tb, context=10,
@@ -90,7 +77,6 @@ def delayed(function):
     return delayed_function
 
 
-################################################################################
 class LazyApply(object):
     """ Lazy version of the apply builtin function.
     """
@@ -104,7 +90,6 @@ class LazyApply(object):
 
 
 
-################################################################################
 class Parallel(Logger):
     ''' Helper class for readable parallel mapping.
 
@@ -138,70 +123,9 @@ class Parallel(Logger):
 
             * An optional progress meter.
 
-            * Interruption of multiprocesses jobs with 'Ctrl-C'
-
         Examples
         --------
 
-        A simple example:
-
-        >>> from math import sqrt
-        >>> from joblib import Parallel, delayed
-        >>> Parallel(n_jobs=1)(delayed(sqrt)(i**2) for i in range(10))
-        [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-
-        Reshaping the output when the function has several return
-        values:
-        
-        >>> from math import modf
-        >>> from joblib import Parallel, delayed
-        >>> r = Parallel(n_jobs=1)(delayed(modf)(i/2.) for i in range(10))
-        >>> res, i = zip(*r)
-        >>> res
-        (0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5)
-        >>> i
-        (0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0)
-       
-        The progress meter::
-
-            >>> from time import sleep
-            >>> from joblib import Parallel, delayed
-            >>> r = Parallel(n_jobs=2, verbose=1)(delayed(sleep)(.1) for _ in range(10)) #doctest: +SKIP
-            [Parallel(n_jobs=2)]: Done   1 out of  10 |elapsed:    0.1s remaining:    0.9s
-            [Parallel(n_jobs=2)]: Done   3 out of  10 |elapsed:    0.2s remaining:    0.5s
-            [Parallel(n_jobs=2)]: Done   5 out of  10 |elapsed:    0.3s remaining:    0.3s
-            [Parallel(n_jobs=2)]: Done   7 out of  10 |elapsed:    0.4s remaining:    0.2s
-            [Parallel(n_jobs=2)]: Done   9 out of  10 |elapsed:    0.5s remaining:    0.1s
-
-        Traceback example, note how the ligne of the error is indicated 
-        as well as the values of the parameter passed to the function that
-        triggered the exception, eventhough the traceback happens in the 
-        child process::
-
-         >>> from string import atoi
-         >>> from joblib import Parallel, delayed
-         >>> Parallel(n_jobs=2)(delayed(atoi)(n) for n in ('1', '300', 30)) #doctest: +SKIP
-         #...
-         ---------------------------------------------------------------------------
-         Sub-process traceback: 
-         ---------------------------------------------------------------------------
-         TypeError                                          Fri Jul  2 20:32:05 2010
-         PID: 4151                                     Python 2.6.5: /usr/bin/python
-         ...........................................................................
-         /usr/lib/python2.6/string.pyc in atoi(s=30, base=10)
-             398     is chosen from the leading characters of s, 0 for octal, 0x or
-             399     0X for hexadecimal.  If base is 16, a preceding 0x or 0X is
-             400     accepted.
-             401 
-             402     """
-         --> 403     return _int(s, base)
-             404 
-             405 
-             406 # Convert string to long integer
-             407 def atol(s, base=10):
-         
-         TypeError: int() can't convert non-string with explicit base
-         ___________________________________________________________________________
 
     '''
     def __init__(self, n_jobs=None, verbose=0):
@@ -216,12 +140,10 @@ class Parallel(Logger):
         n_jobs = self.n_jobs
         if n_jobs == -1:
             if multiprocessing is None:
-                 n_jobs = 1
+                n_jobs = 1
             else:
                 n_jobs = multiprocessing.cpu_count()
 
-        # The list of exceptions that we will capture
-        exceptions = [TransportableException]
         if n_jobs is None or multiprocessing is None or n_jobs == 1:
             n_jobs = 1
             apply = LazyApply 
@@ -229,9 +151,6 @@ class Parallel(Logger):
             pool = multiprocessing.Pool(n_jobs)
             def apply(func, args, kwargs):
                 return pool.apply_async(SafeFunction(function), args, kwargs)
-            # We are using multiprocessing, we also want to capture
-            # KeyboardInterrupts
-            exceptions.extend([KeyboardInterrupt, WorkerInterrupt])
 
         output = list()
         start_time = time.time()
@@ -253,22 +172,15 @@ class Parallel(Logger):
                     if self.verbose:
                         print_progress(self, index, len(jobs), start_time,
                                        n_jobs=n_jobs)
-                except tuple(exceptions), exception:
-                    if isinstance(exception, 
-                            (KeyboardInterrupt, WorkerInterrupt)):
-                        # We have captured a user interruption, clean up
-                        # everything
-                        pool.terminate()
-                        raise exception
-                    elif isinstance(exception, TransportableException):
-                        # Capture exception to add information on 
-                        # the local stack in addition to the distant
-                        # stack
-                        this_report = format_outer_frames(
-                                                context=10,
-                                                stack_start=1,
-                                                )
-                        report = """Multiprocessing exception:
+                except TransportableException, exception:
+                    # Capture exception to add information on 
+                    # the local stack in addition to the distant
+                    # stack
+                    this_report = format_outer_frames(
+                                            context=10,
+                                            stack_start=1,
+                                            )
+                    report = """Multiprocessing exception:
 %s
 ---------------------------------------------------------------------------
 Sub-process traceback: 
@@ -277,10 +189,9 @@ Sub-process traceback:
                                 this_report,
                                 exception.message,
                             )
-                        # Convert this to a JoblibException
-                        exception_type = _mk_exception(exception.etype)[0]
-                        raise exception_type(report)
-                    raise exception
+                    # Convert this to a JoblibException
+                    exception_type = _mk_exception(exception.etype)[0]
+                    raise exception_type(report)
         finally:
             if n_jobs > 1:
                 pool.close()

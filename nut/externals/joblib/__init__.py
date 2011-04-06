@@ -92,11 +92,12 @@ Main features
    We want to be able to quickly inspect what has been run.
 
 .. 
+    >>> mem.db.close()
     >>> import shutil ; shutil.rmtree('/tmp/joblib/')
 
 """
 
-__version__ = '0.4.6'
+__version__ = '0.4.4'
 
 
 from .memory import Memory

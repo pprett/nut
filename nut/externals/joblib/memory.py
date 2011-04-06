@@ -22,6 +22,7 @@ import functools
 import traceback
 import warnings
 import inspect
+from sqlite3 import OperationalError
 try:
     # json is in the standard library for Python >= 2.6
     import json
@@ -37,7 +38,8 @@ from .hashing import hash
 from .func_inspect import get_func_code, get_func_name, filter_args
 from .logger import Logger, format_time
 from . import numpy_pickle
-from .disk import rm_subdirs
+from .cache_db import CacheDB
+from .disk import disk_used, memstr_to_kbytes, rm_subdirs, safe_listdir
 
 FIRST_LINE_TEXT = "# first line:"
 
@@ -53,9 +55,9 @@ FIRST_LINE_TEXT = "# first line:"
 # TODO: Same remark for the logger, and probably use the Python logging
 # mechanism.
 
-# TODO: Track history as objects are called, to be able to garbage
-# collect them.
 
+################################################################################
+# Helper functions
 
 def extract_first_line(func_code):
     """ Extract the first line information from the function code
@@ -68,6 +70,71 @@ def extract_first_line(func_code):
     else:
         first_line = -1
     return func_code, first_line
+
+
+def cost(db_entry, current_time):
+    """ The cost per cache entry for the cache replacement policy.
+    """
+    last_cost        = db_entry['last_cost']
+    size             = db_entry['size']
+    last_access      = db_entry['access_time']
+    computation_time = db_entry['computation_time']
+    delta_t = max(1e-6, current_time - last_access)
+    alpha = 1 - computation_time/delta_t
+    new_cost = alpha*last_cost + size
+    return new_cost
+
+
+def sort_entries(db):
+    current_time = time.time()
+    return sorted(db, key=lambda x: -cost(x, current_time))
+
+
+def compress_cache(db, cachedir, fraction=.1):
+    """ Cache replacement: remove 'fraction' of the size of the stored 
+        cache.
+    """
+    index = db.get('__INDEX__')
+    cache_size = -index['size']
+    target_size = fraction * cache_size
+    try:
+        for db_entry in sort_entries(db):
+            if db_entry['key'] == '__INDEX__':
+                continue
+            module = db_entry['module'].split('.')
+            name = db_entry['func_name']
+            argument_hash = db_entry['argument_hash']
+            module.append(name)
+            func_dir = os.path.join(cachedir, *module)
+            argument_dir = os.path.join(func_dir, argument_hash)
+            if os.path.exists(argument_dir):
+                try:    
+                    shutil.rmtree(argument_dir)
+                except:
+                    # XXX: Where is our logging framework?
+                    print ('[joblib] Warning could not empty cache directory %s'
+                            % argument_dir)
+            try:
+                db.remove(db_entry['key'])
+                cache_size -= db_entry['size']
+            except KeyError, OperationalError:
+                # A KeyError can be created by a race-condition between
+                # different processes trying to remove the same entry
+                # An operational error means that the db is locked. Not a
+                # big deal: we erased the directory, so JobLib will
+                # figure out that the key is obsolete
+                pass
+            if safe_listdir(func_dir) == ['func_code.py']:
+                try:    
+                    shutil.rmtree(func_dir)
+                except:
+                    # XXX: Where is our logging framework?
+                    print ('[joblib] Warning could not empty cache directory %s'
+                            % func_dir)
+            if cache_size <= target_size:
+                break
+    finally:
+        db.update_entry('__INDEX__', size=-cache_size)
 
 
 class JobLibCollisionWarning(UserWarning):
@@ -108,7 +175,8 @@ class MemorizedFunc(Logger):
     #-------------------------------------------------------------------------
    
     def __init__(self, func, cachedir, ignore=None, save_npy=True, 
-                             mmap_mode=None, verbose=1):
+                             mmap_mode=None, verbose=1, db=None,
+                             limit=None, timestamp=None):
         """
             Parameters
             ----------
@@ -129,13 +197,29 @@ class MemorizedFunc(Logger):
             verbose: int, optional
                 Verbosity flag, controls the debug messages that are issued 
                 as functions are revaluated.
+            db: CacheDB object or None
+                The database to keep track of the access.
+            limit: string of the form '1M' or None, optional
+                The maximum size of the cache stored on disk
+            timestamp: float, optional
+                The reference time from which times in tracing messages
+                are reported.
         """
         Logger.__init__(self)
         self._verbose = verbose
         self.cachedir = cachedir
+        # Check that the given argument is OK
+        assert limit is None or memstr_to_kbytes(limit) >= 40, ValueError(
+            'The cache size limit should be greater than 40K, %s was passed'
+            % limit)
+        self.limit = limit
         self.func = func
         self.save_npy = save_npy
         self.mmap_mode = mmap_mode
+        self.db = db
+        if timestamp is None:
+            timestamp = time.time()
+        self.timestamp = timestamp
         if ignore is None:
             ignore = []
         self.ignore = ignore
@@ -157,13 +241,28 @@ class MemorizedFunc(Logger):
     def __call__(self, *args, **kwargs):
         # Compare the function code with the previous to see if the
         # function code has changed
-        output_dir, _ = self.get_output_dir(*args, **kwargs)
+        db_entry = self.get_db_entry(*args, **kwargs)
+        output_dir = db_entry['output_dir']
         # FIXME: The statements below should be try/excepted
-        if not (self._check_previous_func_code(stacklevel=3) and 
-                                 os.path.exists(output_dir)):
+        if (not self._check_previous_func_code(stacklevel=3) 
+                or not 'size' in db_entry):
             return self.call(*args, **kwargs)
         else:
             try:
+                # Update the stored cost
+                current_time = time.time()
+                new_cost = cost(db_entry, current_time)
+                # XXX: We should probably add the option to commit only
+                # every once in a while for speed reasons. For joblib, 
+                # commiting is important only in multiprocess situations,
+                # or in case of crashes. The commit policy could be
+                # based on computation/loading time
+                self.db.update_entry(db_entry['key'],
+                            last_cost=new_cost,
+                            access_time=current_time,
+                    )
+
+                # Return the stored value
                 return self.load_output(output_dir)
             except Exception:
                 # XXX: Should use an exception logger
@@ -180,6 +279,59 @@ class MemorizedFunc(Logger):
     # Private interface
     #-------------------------------------------------------------------------
    
+    def get_db_entry(self, *args, **kwargs):
+        output_dir, argument_hash = self.get_output_dir(*args, **kwargs)
+        module, func_name  = get_func_name(self.func)
+        module = '.'.join(module)
+        key = ':'.join((module, func_name, argument_hash))
+        if self.db is None or not os.path.exists(output_dir):
+            # FIXME: Really ugly way of dealing we no db
+            db_entry = dict()
+        else:
+            try:
+                db_entry = self.db.get(key)
+            except KeyError:
+                # The key is not in the database, but the cache directory
+                # may exist, we can try to rebuild the key
+                input_repr = self._persist_input(None, *args, **kwargs)
+                size = disk_used(output_dir)
+                db_entry = self.db.get('__INDEX__')
+                db_entry.update(key=key,
+                                func_name=func_name, 
+                                module=module, 
+                                args=repr(input_repr), 
+                                argument_hash=argument_hash,
+                                # We are using as a creation time, the
+                                # creation_time of the repo, as an
+                                # access_time, we are using a date half time 
+                                # between the current time and the
+                                # creation_time
+                                access_time=.5*(db_entry['creation_time'] +
+                                                time.time()),
+                                # A computation time of 100ms, as a guess
+                                computation_time=100,
+                                size=size,
+                                last_cost=size + 1,
+                            )
+
+        db_entry['output_dir'] = output_dir
+        return db_entry
+
+    def get_output_dir(self, *args, **kwargs):
+        """ Returns the directory in which are persisted the results
+            of the function corresponding to the given arguments.
+
+            The results can be loaded using the .load_output method.
+        """
+        coerce_mmap = (self.mmap_mode is not None)
+        argument_hash = hash(filter_args(self.func, self.ignore,
+                             *args, **kwargs), 
+                             coerce_mmap=coerce_mmap)
+        output_dir = os.path.join(self._get_func_dir(),
+                                    argument_hash)
+        return output_dir, argument_hash
+        
+
     def _get_func_dir(self, mkdir=True):
         """ Get the directory corresponding to the cache for the
             function.
@@ -197,21 +349,6 @@ class MemorizedFunc(Logger):
                 # XXX: Ugly
         return func_dir
 
-
-    def get_output_dir(self, *args, **kwargs):
-        """ Returns the directory in which are persisted the results
-            of the function corresponding to the given arguments.
-
-            The results can be loaded using the .load_output method.
-        """
-        coerce_mmap = (self.mmap_mode is not None)
-        argument_hash = hash(filter_args(self.func, self.ignore,
-                             *args, **kwargs), 
-                             coerce_mmap=coerce_mmap)
-        output_dir = os.path.join(self._get_func_dir(self.func),
-                                    argument_hash)
-        return output_dir, argument_hash
-        
 
     def _write_func_code(self, filename, func_code, first_line):
         """ Write the function code and the filename to a file.
@@ -232,11 +369,14 @@ class MemorizedFunc(Logger):
         func_dir = self._get_func_dir()
         func_code_file = os.path.join(func_dir, 'func_code.py')
 
-        if not os.path.exists(func_code_file): 
+        try:
+            old_func_code, old_first_line = \
+                            extract_first_line(file(func_code_file).read())
+        except IOError:
+            # Either the file did not exist, or it has been erased while we 
+            # weren't looking
             self._write_func_code(func_code_file, func_code, first_line)
             return False
-        old_func_code, old_first_line = \
-                        extract_first_line(file(func_code_file).read())
         if old_func_code == func_code:
             return True
 
@@ -285,6 +425,7 @@ class MemorizedFunc(Logger):
     def clear(self, warn=True):
         """ Empty the function's cache. 
         """
+        # XXX: Need to flush the db also
         func_dir = self._get_func_dir(mkdir=False)
         if self._verbose and warn:
             self.warn("Clearing cache %s" % func_dir)
@@ -308,6 +449,33 @@ class MemorizedFunc(Logger):
         self._persist_output(output, output_dir)
         input_repr = self._persist_input(output_dir, *args, **kwargs)
         duration = time.time() - start_time
+        if self.db is not None:
+            # Add one to size to avoid it being 0
+            size = disk_used(output_dir) + 1
+            module, func_name  = get_func_name(self.func)
+            module = '.'.join(module)
+            key = ':'.join((module, func_name, argument_hash))
+            self.db.new_entry(dict(
+                        key=key,
+                        func_name=func_name,
+                        module=module,
+                        args=repr(input_repr),
+                        argument_hash=argument_hash,
+                        creation_time=start_time,
+                        access_time=start_time,
+                        computation_time=duration,
+                        size=size,
+                        last_cost=float(size),
+                    ))
+            total_size = self.db.get('__INDEX__')['size'] - size
+            self.db.update_entry('__INDEX__', 
+                        size=total_size,
+                        access_time=time.time()
+                    )
+            if ( self.limit is not None 
+                    and -total_size > memstr_to_kbytes(self.limit)):
+                # XXX: We should really have a store object
+                compress_cache(self.db, self.cachedir)
         if self._verbose:
             _, name = get_func_name(self.func)
             msg = '%s - %s' % (name, format_time(duration))
@@ -378,7 +546,13 @@ class MemorizedFunc(Logger):
                                     *args, **kwargs)
 
         input_repr = dict((k, repr(v)) for k, v in argument_dict.iteritems())
-        if json is not None:
+        if json is not None and output_dir is not None:
+            # Make sure that our output_dir has not been deleted
+            # in the mean time
+            # XXX: We should have a function to create the output_dir,
+            # that would populate it correctly (func_code.py)
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
             json.dump(
                 input_repr,
                 file(os.path.join(output_dir, 'input_args.json'), 'w'),
@@ -389,6 +563,12 @@ class MemorizedFunc(Logger):
         """ Read the results of a previous calculation from the directory
             it was cached in.
         """
+        if self._verbose > 1:
+            t = time.time() - self.timestamp
+            print '[Memory]% 16s: Loading %s...' % (
+                                    format_time(t),
+                                    self.format_signature(self.func)[0]
+                                    )
         filename = os.path.join(output_dir, 'output.pkl')
         if self.save_npy:
             return numpy_pickle.load(filename, 
@@ -429,7 +609,7 @@ class Memory(Logger):
     #-------------------------------------------------------------------------
    
     def __init__(self, cachedir, save_npy=True, mmap_mode=None,
-                       verbose=1):
+                       verbose=1, limit=None):
         """
             Parameters
             ----------
@@ -448,18 +628,29 @@ class Memory(Logger):
             verbose: int, optional
                 Verbosity flag, controls the debug messages that are issued 
                 as functions are revaluated.
+            limit: string of the form '1M' or None, optional
+                The maximum size of the cache stored on disk
         """
         # XXX: Bad explaination of the None value of cachedir
         Logger.__init__(self)
         self._verbose = verbose
         self.save_npy = save_npy
         self.mmap_mode = mmap_mode
+        # Check that the given argument is OK
+        assert limit is None or memstr_to_kbytes(limit) >= 40, ValueError(
+            'The cache size limit should be greater than 40K, %s was passed'
+            % limit)
+        self.limit = limit
+        self.timestamp = time.time()
         if cachedir is None:
             self.cachedir = None
+            self.db = None
         else:
             self.cachedir = os.path.join(cachedir, 'joblib')
             if not os.path.exists(self.cachedir):
                 os.makedirs(self.cachedir)
+            self.db = CacheDB(filename=os.path.join(self.cachedir,
+                                                    'db.sqlite'))
 
 
     def cache(self, func=None, ignore=None):
@@ -484,7 +675,10 @@ class Memory(Logger):
                                    save_npy=self.save_npy,
                                    mmap_mode=self.mmap_mode,
                                    ignore=ignore,
-                                   verbose=self._verbose)
+                                   verbose=self._verbose, 
+                                   db=self.db, 
+                                   limit=self.limit,
+                                   timestamp=self.timestamp)
 
 
     def clear(self, warn=True):
@@ -493,6 +687,8 @@ class Memory(Logger):
         if warn:
             self.warn('Flushing completely the cache')
         rm_subdirs(self.cachedir)
+        if self.db is not None:
+            self.db.clear()
 
 
     def eval(self, func, *args, **kwargs):
@@ -508,6 +704,21 @@ class Memory(Logger):
             return func(*args, **kwargs)
         return self.cache(func)(*args, **kwargs)
 
+
+    # Context manager methods for the Memory object.
+    # Closes the database when leaving the context.
+    # Using the context manager avoids having to write a long try ... except
+    # statement around every test.
+
+    def __enter__(self):
+        return self
+
+
+    def __exit__(self, type, value, traceback):
+        if self.db is not None:
+            self.db.close()
+
+
     #-------------------------------------------------------------------------
     # Private `object` interface
     #-------------------------------------------------------------------------
@@ -517,5 +728,3 @@ class Memory(Logger):
                     self.__class__.__name__,
                     repr(self.cachedir),
                     )
-
-
