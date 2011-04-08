@@ -175,7 +175,7 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False,
                     dist = [("eph", T[i], v) for i, v in enumerate(dist)]
                     enc_features = chain(enc_features, encode_numeric(dist))
                 # update EPH
-                if tag != "O":  # XXX and tag != "Unk":
+                if tag != "O" and tag != "Unk":
                     eph.push(w, tag)
 
             # Encode unlabeled token as -1
@@ -262,7 +262,8 @@ class GreedyTagger(Tagger):
         self.tag_map = dict([(i, t) for i, t in enumerate(T)])
 
     @timeit
-    def train(self, train_reader, reg=0.0001, epochs=30, shuffle=False):
+    def train(self, train_reader, reg=0.0001, epochs=30, shuffle=False,
+              seed=13, n_jobs=1, biasterm=True):
         T = self.T
         # Create EPH if necessary
         if self.use_eph:
@@ -283,8 +284,8 @@ class GreedyTagger(Tagger):
 
             # Update vocabulary and feature map with ASO features.
             for i in range(self.aso_model.thetat.shape[1]):
-                self.V.append("aso_%d" % i)
-                self.fidx_map["aso_%d" % i] = self.aso_model.thetat.shape[0] + i
+                self.V.append("aso%d_cur" % i)
+                self.fidx_map["aso%d_cur" % i] = self.aso_model.thetat.shape[0] + i
 
         print "_" * 80
         print "Training"
@@ -295,10 +296,10 @@ class GreedyTagger(Tagger):
         print "classes: ", T
         print "reg: %.8f" % reg
         print "epochs: %d" % epochs
-        glm = bolt.GeneralizedLinearModel(dataset.dim, len(T), biasterm=True)
-        #dataset.shuffle(9)
+        glm = bolt.GeneralizedLinearModel(dataset.dim, len(T), biasterm=biasterm)
+
         self._train(glm, dataset, epochs=epochs, reg=reg, verbose=self.verbose,
-                    shuffle=shuffle)
+                    shuffle=shuffle, seed=seed, n_jobs=n_jobs)
         self.glm = glm
 
     def _train(self, glm, dataset, **kargs):
@@ -349,7 +350,7 @@ class AvgPerceptronTagger(GreedyTagger):
     def _train(self, glm, dataset, **kargs):
         epochs = kargs["epochs"]
         trainer = bolt.trainer.avgperceptron.AveragedPerceptron(epochs=epochs)
-        trainer.train(glm, dataset, shuffle=kargs["shuffle"],
+        trainer.train(glm, dataset, shuffle=kargs["shuffle"], seed=kargs["seed"],
                       verbose=self.verbose)
 
 
@@ -361,5 +362,5 @@ class GreedySVMTagger(GreedyTagger):
         sgd = bolt.SGD(bolt.ModifiedHuber(), reg=kargs["reg"],
                        epochs=kargs["epochs"])
         trainer = bolt.OVA(sgd)
-        trainer.train(glm, dataset, shuffle=kargs["shuffle"],
-                      verbose=self.verbose, ncpus=2)
+        trainer.train(glm, dataset, shuffle=kargs["shuffle"], seed=kargs["seed"],
+                      verbose=self.verbose, ncpus=kargs["n_jobs"])

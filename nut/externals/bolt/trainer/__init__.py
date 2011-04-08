@@ -42,7 +42,7 @@ class OVA(object):
         self.trainer = trainer
         """:member trainer: the trainer... """
 
-    def train(self, glm, dataset, verbose=1, shuffle=False, ncpus=1):
+    def train(self, glm, dataset, verbose=1, shuffle=False, seed=None, ncpus=1):
         """Train the `glm` using `k` binary `LinearModel` classifiers by
         applying the One-versus-All multi-class strategy.
 
@@ -60,37 +60,37 @@ class OVA(object):
         assert glm.k == len(dataset.classes)
         t1 = time()
         if ncpus == 1:
-            self.serialtrain(glm, dataset, verbose, shuffle)
+            self.serialtrain(glm, dataset, verbose, shuffle, seed)
         else:
-            self.paralleltrain(glm, dataset, verbose, shuffle, ncpus)
+            self.paralleltrain(glm, dataset, verbose, shuffle, seed, ncpus)
         if verbose > 0:
             print("%d models trained in %.2f seconds. " % (len(dataset.classes),
                                                            time() - t1))
 
-    def serialtrain(self, glm, dataset, verbose, shuffle):
+    def serialtrain(self, glm, dataset, verbose, shuffle, seed):
         classes = dataset.classes
         t1 = time()
         for i, c in enumerate(classes):
             bmodel = LinearModel(glm.m, biasterm=glm.biasterm)
             dtmp = BinaryDataset(dataset, c)
             self.trainer.train(bmodel, dtmp, verbose=0,
-                               shuffle=shuffle)
+                               shuffle=shuffle, seed=seed)
             glm.W[i] = bmodel.w.T
             glm.b[i] = bmodel.bias
             if verbose > 1:
                 print("Model %d trained. \n" \
                       "Total training time %.2f seconds." % (i, time() - t1))
 
-    def paralleltrain(self, glm, dataset, verbose, shuffle, ncpus):
+    def paralleltrain(self, glm, dataset, verbose, shuffle, seed, ncpus):
         import multiprocessing
         if ncpus == None or ncpus <= 0:
             ncpus = multiprocessing.cpu_count()
         pool = multiprocessing.Pool(ncpus)
         protomodel = LinearModel(glm.m, biasterm=glm.biasterm)
         prototrainer = self.trainer
-        t1 = time()
         tasks = [(i, c, deepcopy(protomodel), prototrainer,
-                  BinaryDataset(dataset, c), verbose, shuffle)
+                  BinaryDataset(dataset, c), verbose, shuffle,
+                  seed)
                  for i, c in enumerate(dataset.classes)]
         bmodels = pool.map(paralleltrain_impl, tasks)
         for i, c, model in bmodels:
@@ -99,9 +99,9 @@ class OVA(object):
 
 
 def paralleltrain_impl(args):
-    i, c, model, trainer, ds, verbose, shuffle = args
+    i, c, model, trainer, ds, verbose, shuffle, seed = args
     t1 = time()
-    trainer.train(model, ds, verbose=0, shuffle=shuffle)
+    trainer.train(model, ds, verbose=0, shuffle=shuffle, seed=seed)
     if verbose > 1:
         print("Model %d trained.\n" \
               "Training time %.2f seconds." % (i, time() - t1))

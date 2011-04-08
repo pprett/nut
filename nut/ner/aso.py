@@ -213,8 +213,12 @@ class ASO(object):
                                                    task_masks=task_masks,
                                                    useinvertedindex=False,
                                                    feature_types=self.feature_types)
+
+        store_W = True
         # learn the embedding
-        struct_learner.learn()
+        struct_learner.learn(store_W=store_W)
+
+        struct_learner.print_W_cols(range(len(aux_tasks)), self.vocabulary)
 
         # store data in model
         print
@@ -225,6 +229,8 @@ class ASO(object):
         self.m = m
         self.k = k
         return self
+
+    
 
     def project_dataset(self, dataset, usestandardize=True, useavgnorm=True,
                         beta=1.0):

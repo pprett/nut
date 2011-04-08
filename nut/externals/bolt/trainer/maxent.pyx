@@ -140,7 +140,7 @@ cdef class MaxentSGD(object):
         self.norm = norm
         
 
-    def train(self, model, dataset, verbose=0, shuffle=False, nprobe=-1):
+    def train(self, model, dataset, verbose=0, shuffle=False, seed=None, nprobe=-1):
         """Train `model` on the `dataset` using SGD.
 
         :arg model: The :class:`bolt.model.GeneralizedLinearModel`
@@ -149,17 +149,18 @@ cdef class MaxentSGD(object):
         :arg verbose: The verbosity level. If 0 no output to stdout.
         :arg shuffle: Whether or not the training data should be shuffled
         after each epoch.
+        :arg seed: The seed for the random number generator to reproduce shufflings.
         :arg nprobe: The number of probe examples to determine the learning rate.
         If -1 use 10 percent of the training data. 
         """
         if nprobe == -1:
-            probeset = dataset.sample(int(dataset.n / 10), seed=13)
+            probeset = dataset.sample(int(dataset.n / 10), seed=seed)
         else:
             assert nprobe > 0
-            probeset = dataset.sample(int(nprobe), seed = 13)
-        self._train(model, dataset, probeset, verbose, shuffle)
+            probeset = dataset.sample(int(nprobe), seed=seed)
+        self._train(model, dataset, probeset, verbose, shuffle, seed)
 
-    cdef void _train(self,model, dataset, probeset, verbose, shuffle):
+    cdef void _train(self, model, dataset, probeset, verbose, shuffle, seed):
         
         cdef int m = model.m
         cdef int n = dataset.n
@@ -194,7 +195,7 @@ cdef class MaxentSGD(object):
             if verbose > 0:
                 print("-- Epoch %d" % (e+1))
             if shuffle:
-                dataset.shuffle()
+                dataset.shuffle(seed=seed)
             #if e % 10 == 0:
             #    print("probing for eta...")
             #    eta = probe(probeset, w, wscale, wstride, b, k, pd, reg, n)

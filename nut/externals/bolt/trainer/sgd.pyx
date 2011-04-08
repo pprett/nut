@@ -355,7 +355,7 @@ cdef class SGD:
     def __reduce__(self):
         return SGD,(self.loss,self.reg, self.epochs, self.norm, self.alpha)
 
-    def train(self, model, dataset, verbose=0, shuffle=False, mask=None):
+    def train(self, model, dataset, verbose=0, shuffle=False, seed=None, mask=None):
         """Train `model` on the `dataset` using SGD.
 
         :arg model: The :class:`bolt.model.LinearModel` that is going to be trained. 
@@ -363,6 +363,7 @@ cdef class SGD:
         :arg verbose: The verbosity level. If 0 no output to stdout.
         :arg shuffle: Whether or not the training data should be shuffled
         after each epoch.
+        :arg seed: The seed for the random number generator to reproduce shufflings.
         :arg mask: The feature mask, a binary array that specificies which features
         should be considered.
         """
@@ -371,9 +372,9 @@ cdef class SGD:
         else:
             mask = np.asarray(mask, dtype=np.int32, order="C")
             assert mask.shape == (model.m,)
-        self._train(model, dataset, verbose, shuffle, mask)
+        self._train(model, dataset, verbose, shuffle, seed, mask)
 
-    cdef void _train(self, model, dataset, verbose, shuffle, mask_arr):
+    cdef void _train(self, model, dataset, verbose, shuffle, seed, mask_arr):
         
         cdef LossFunction loss = self.loss
         cdef int m = model.m
@@ -430,14 +431,14 @@ cdef class SGD:
         
         # computing eta0
         cdef double typw = sqrt(1.0 / sqrt(reg))
-        cdef double eta0 = typw /max(1.0, loss.dloss(-typw,1.0))
+        cdef double eta0 = typw / max(1.0, loss.dloss(-typw,1.0))
         t = 1.0 / (eta0 * reg)
         t1=time()
         for e from 0 <= e < self.epochs:
             if verbose > 0:
                 print("-- Epoch %d" % (e+1))
             if shuffle:
-                dataset.shuffle()
+                dataset.shuffle(seed=seed)
             for x,y in dataset:
                 eta = 1.0 / (reg * t)
                 xnnz = x.shape[0]
@@ -526,23 +527,26 @@ cdef class PEGASOS:
     def __reduce__(self):
         return PEGASOS,(self.reg, self.epochs)
 
-    def train(self, model, dataset, verbose=0, shuffle=False, mask=None):
+    def train(self, model, dataset, verbose=0, shuffle=False, seed=None, mask=None):
         """Train `model` on the `dataset` using PEGASOS.
 
         :arg model: The :class:`LinearModel` that is going to be trained. 
         :arg dataset: The :class:`Dataset`. 
         :arg verbose: The verbosity level. If 0 no output to stdout.
         :arg shuffle: Whether or not the training data should be shuffled
-        after each epoch. 
+        after each epoch.
+        :arg seed: The seed for the random number generator to reproduce shufflings.
+        :arg mask: The feature mask, a binary array that specificies which features
+        should be considered.
         """
         if mask == None:
             mask = np.ones((model.m,), dtype=np.int32, order="C")
         else:
             mask = np.asarray(mask, dtype=np.int32, order="C")
             assert mask.shape == (model.m,)
-        self._train(model, dataset, verbose, shuffle, mask)
+        self._train(model, dataset, verbose, shuffle, seed, mask)
 
-    cdef void _train(self, model, dataset, verbose, shuffle, mask_arr):
+    cdef void _train(self, model, dataset, verbose, shuffle, seed, mask_arr):
         cdef int m = model.m
         cdef int n = dataset.n
         cdef double reg = self.reg
@@ -582,7 +586,7 @@ cdef class PEGASOS:
                 print("-- Epoch %d" % (e+1))
             
             if shuffle:
-                dataset.shuffle()
+                dataset.shuffle(seed=seed)
             for x,y in dataset:
                 eta = 1.0 / (reg * t)
                 xnnz = x.shape[0]

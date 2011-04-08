@@ -14,7 +14,7 @@ from __future__ import division
 import numpy as np
 import sparsesvd
 from collections import defaultdict
-from itertools import chain
+from itertools import chain, izip
 
 from ..util import timeit, trace
 from .auxstrategy import HadoopTrainingStrategy
@@ -124,18 +124,42 @@ class StructLearner(object):
         self.inverted_index = iidx
 
     @timeit
-    def learn(self):
+    def learn(self, verbose=0, compute_svd=True, store_W=False):
         """
         Learns the structural parameter theta from the auxiliary tasks.
         """
-        W = self.training_strategy.train_aux_classifiers(self.dataset, self.auxtasks,
+        W = self.training_strategy.train_aux_classifiers(self.dataset,
+                                                         self.auxtasks,
                                                          self.task_masks,
                                                          self.classifier_trainer,
                                                          inverted_index=self.inverted_index)
         density = W.nnz / float(W.shape[0] * W.shape[1])
         print "density of W: %.8f" % density
-        self.thetat = self.compute_svd(W)
-        print "shape of Theta^T = (%d,%d)" % self.thetat.shape
+        if store_W:
+            self.W = W
+        if compute_svd:
+            self.thetat = self.compute_svd(W)
+            print "shape of Theta^T = (%d,%d)" % self.thetat.shape
+
+    def print_W_cols(self, task_idx, vocabulary, n_terms=10, n_cols=10):
+        if not hasattr(self, "W"):
+            raise AttributeError("learn() has to be run with argument " \
+                                 "`store_W=True`.")
+        print "_" * 80
+        print "Print significant cols of W"
+        print
+        Wt = self.W.T
+        for i in task_idx:
+            task = self.auxtasks[i]
+            w = Wt[i]
+            idx = w.data.argsort()[:n_terms:-1][:n_terms]
+            if not hasattr(task, "__iter__"):
+                task = [task]
+            task = [vocabulary[term] for term in task]
+            corr_terms = ["%s (%.2f)" % (vocabulary[term], weight) for term, weight in
+                          izip(w.indices[idx], w.data[idx])]
+            print "%s: %s" % (str(task), ", ".join(corr_terms))
+
 
     def compute_svd(self, W):
         """Compute the sparse SVD of W.

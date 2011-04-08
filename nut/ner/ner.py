@@ -78,6 +78,12 @@ def train_args_parser():
                       dest="shuffle",
                       default=False,
                       help="Shuffle the training data after each epoche.")
+    parser.add_option("--seed",
+                      dest="seed",
+                      help="The shuffle seed.",
+                      default=13,
+                      metavar="int",
+                      type="int")
     parser.add_option("--stats",
                       action="store_true",
                       dest="stats",
@@ -88,12 +94,23 @@ def train_args_parser():
                       dest="use_eph",
                       default=False,
                       help="Use Extended Prediction History.")
+    parser.add_option("--no-biasterm",
+                      action="store_false",
+                      dest="biasterm",
+                      default=True,
+                      help="Use unbiased hyperplanes.")
     parser.add_option("--aso",
                       dest="aso",
                       default=False,
                       help="Give an Alternating Structural Optimization model.",
                       metavar="str",
                       type="str")
+    parser.add_option("--n-jobs",
+                      dest="n_jobs",
+                      help="The number of processes to fork.",
+                      default=3,
+                      metavar="int",
+                      type="int")
 
     return parser
 
@@ -158,7 +175,8 @@ def train():
                                  use_eph=options.use_eph)
 
     model.train(train_reader, reg=options.reg, epochs=options.epochs,
-                shuffle=options.shuffle)
+                shuffle=options.shuffle, seed=options.seed,
+                n_jobs=options.n_jobs, biasterm=options.biasterm)
     if options.stats:
         print "_" * 80
         print " Stats\n"

@@ -84,7 +84,7 @@ cdef class AveragedPerceptron(object):
         self.epochs = epochs
         
 
-    def train(self, model, dataset, verbose = 0, shuffle = False):
+    def train(self, model, dataset, verbose=0, shuffle=False, seed=None):
         """Train `model` on the `dataset` using SGD.
 
         :arg model: The model that is going to be trained.
@@ -93,11 +93,12 @@ cdef class AveragedPerceptron(object):
         :arg dataset: The :class:`bolt.io.Dataset`. 
         :arg verbose: The verbosity level. If 0 no output to stdout.
         :arg shuffle: Whether or not the training data should be
-        shuffled after each epoch. 
+        shuffled after each epoch.
+        :arg seed: The seed for the random number generator to reproduce shufflings.
         """
-        self._train_multi(model, dataset, verbose, shuffle)
+        self._train_multi(model, dataset, verbose, shuffle, seed)
 
-    cdef void _train_multi(self,model, dataset, verbose, shuffle):
+    cdef void _train_multi(self,model, dataset, verbose, shuffle, seed):
         cdef int m = model.m
         cdef int k = model.k
         cdef int n = dataset.n
@@ -128,7 +129,7 @@ cdef class AveragedPerceptron(object):
             if verbose > 0:
                 print("-- Epoch %d" % (e+1))
             if shuffle:
-                dataset.shuffle()
+                dataset.shuffle(seed=seed)
             nadds = 0
             i = 0
             for x,y in dataset:
