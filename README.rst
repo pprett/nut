@@ -158,4 +158,7 @@ References
 
 [Ratinov, L. and Roth, D., 2009] `Design challenges and misconceptions in named entity recognition <http://www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
 
+Developer Notes
+---------------
 
+  * If you copy a new version of `bolt` into the `externals` directory make sure to run cython on the `*.pyx` files. If you fail to do so you will get a `PickleError` in multiprocessing.
