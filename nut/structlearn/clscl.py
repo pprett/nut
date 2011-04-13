@@ -11,7 +11,6 @@ clscl
 """
 from __future__ import division
 
-import sys
 import numpy as np
 import math
 import optparse
@@ -42,8 +41,8 @@ class CLSCLModel(object):
 
     Parameters
     ----------
-    thetat : array, shape = [|voc|, k]
-        Theta transposed.
+    struct_learner : StructLearner
+        A trained StructLearner object.
     mean : array, shape = [|voc|]
         Mean value of each feature.
     std : array, shape = [|voc|]
@@ -57,6 +56,8 @@ class CLSCLModel(object):
     ----------
     `thetat` : array, shape = [|voc|, k]
         Theta transposed.
+    `struct_learner` : StructLearner
+        The structLearner object which holds theta
     `mean` : array, shape = [|voc|]
         Mean value of each feature.
     `std` : array, shape = [|voc|]
@@ -71,8 +72,9 @@ class CLSCLModel(object):
         Target vocabulary.
 
     """
-    def __init__(self, thetat, mean=None, std=None, avg_norm=None):
-        self.thetat = thetat
+    def __init__(self, struct_learner, mean=None, std=None, avg_norm=None):
+        self.struct_learner = struct_learner
+        # self.thetat = thetat
         self.s_voc = None
         self.t_voc = None
         self.mean = mean
@@ -95,7 +97,8 @@ class CLSCLModel(object):
             A new bolt.io.MemoryDataset equal to `ds`
             but contains projected feature vectors.
         """
-        dense_instances = structlearn.project(ds, self.thetat, dense=True)
+        struct_learner = self.struct_learner
+        dense_instances = struct_learner.project(ds, dense=True)
 
         if self.mean != None and self.std != None:
             standardize(dense_instances, self.mean, self.std)
@@ -103,7 +106,8 @@ class CLSCLModel(object):
             dense_instances /= self.avg_norm
 
         instances = structlearn.to_sparse_bolt(dense_instances)
-        dim = self.thetat.shape[1]
+        dim = struct_learner.thetat.shape[1] * \
+              struct_learner.feature_type_split.shape[0]
         labels = ds.labels
         new_ds = bolt.io.MemoryDataset(dim, instances, labels)
         new_ds._idx = ds._idx
@@ -196,7 +200,7 @@ class CLSCLTrainer(object):
                          if counts[ws] >= phi and counts[wt] >= phi)
         pivots = [pivot for pivot in islice(pivots, m)]
         if self.verbose > 1:
-            terms = [(self.s_ivoc[ws],self.t_ivoc[wt]) for ws, wt in pivots]
+            terms = [(self.s_ivoc[ws], self.t_ivoc[wt]) for ws, wt in pivots]
             print "_" * 80
             print "Pivots:"
             print
@@ -231,15 +235,16 @@ class CLSCLTrainer(object):
                                                    self.trainer,
                                                    self.strategy)
         struct_learner.learn()
-        self.project(struct_learner.thetat, verbose=1)
-        return CLSCLModel(struct_learner.thetat, mean=self.mean,
+        self.project(struct_learner, verbose=1)
+        del struct_learner.dataset
+        return CLSCLModel(struct_learner, mean=self.mean,
                           std=self.std, avg_norm=self.avg_norm)
 
     @timeit
-    def project(self, thetat, verbose=1):
+    def project(self, struct_learner, verbose=1):
         """Projects `s_train`, `s_unlabeled` and `t_unlabeled`
-        onto the subspace induced by theta transposed, `thetat`,
-        and post-processes the projected data.
+        onto the subspace induced by theta transposed,
+        `struct_learner.thetat`, and post-processes the projected data.
 
         Post-processes the projected data by a) standardizing
         (0 mean, unit variance; where mean and variance are estimated from
@@ -247,15 +252,16 @@ class CLSCLTrainer(object):
         such that the average L2 norm of the training examples
         equals 1.
         """
-        s_train = structlearn.project(self.s_train, thetat, dense=True)
-        s_unlabeled = structlearn.project(self.s_unlabeled, thetat,
-                                          dense=True)
-        t_unlabeled = structlearn.project(self.t_unlabeled, thetat,
-                                          dense=True)
+        s_train = struct_learner.project(self.s_train, dense=True)
+        s_unlabeled = struct_learner.project(self.s_unlabeled,
+                                             dense=True)
+        t_unlabeled = struct_learner.project(self.t_unlabeled,
+                                             dense=True)
 
         data = np.concatenate((s_train, s_unlabeled, t_unlabeled))
         mean = data.mean(axis=0)
         std = data.std(axis=0)
+        std[std == 0.0] = 1.0
         self.mean, self.std = mean, std
         standardize(s_train, mean, std)
 
@@ -264,7 +270,8 @@ class CLSCLTrainer(object):
         self.avg_norm = avg_norm
         s_train /= avg_norm
 
-        dim = thetat.shape[0]
+        dim = struct_learner.thetat.shape[1] * \
+              struct_learner.feature_type_split.shape[0]
         self.s_train.instances = structlearn.to_sparse_bolt(s_train)
         self.s_train.dim = dim
 
@@ -542,7 +549,7 @@ def predict():
 
     train = clscl_model.project(s_train)
     test = clscl_model.project(t_test)
-    
+
     del clscl_model  # free clscl model
     
     epochs = int(math.ceil(10.0**6 / train.n))

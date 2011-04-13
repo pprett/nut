@@ -23,8 +23,8 @@ This package provides functionality for
 __author__ = "Peter Prettenhofer <peter.prettenhofer@gmail.com>"
 
 
-from .structlearn import StructLearner, project, concat_datasets, \
-     project_instance_dense, concat_instances, Error, standardize, \
+from .structlearn import StructLearner, concat_datasets, \
+     concat_instances, Error, standardize, \
      to_sparse_bolt
 
 from . import auxtrainer

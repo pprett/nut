@@ -9,17 +9,20 @@ TODO doc
 """
 import sys
 import numpy as np
+import gc
 from ..externals import bolt
 
 from collections import defaultdict
 from itertools import chain, repeat, izip
-from ..util import timeit
+from ..util import timeit, sizeof
 from ..ner.nonlocal import ExtendedPredictionHistory
 
 
+MAX_TOKENS = 2200000
+
 @timeit
 def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
-                     verbose=0):
+                     verbose=0, pos_prefixes=[], pos_idx=1):
     """
     Arguments
     ---------
@@ -52,10 +55,18 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
         minc = iter(minc)
     else:
         minc = repeat(minc)
+
+    pp_check = [isinstance(e, list) for e in pos_prefixes]
+    if len(pp_check) > 0 and all(pp_check):
+        assert len(pos_prefixes) == len(readers)
+        pos_prefixes = iter(pos_prefixes)
+    else:
+        pos_prefixes = repeat(pos_prefixes)
+
     tags = set()
     i = 0
     all_vocabulary = set()
-    for reader, minc in izip(readers, minc):
+    for reader, minc, pos_prefixes in izip(readers, minc, pos_prefixes):
         vocabulary = defaultdict(int)
         for sent in reader.sents():
             untagged_sent = [token for (token, tag) in sent]
@@ -66,6 +77,12 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
                     tags.add(tag)
             length = len(untagged_sent)
             for index in xrange(length):
+                if pos_prefixes != []:
+                    # skip token if not one of the pos prefixes
+                    skip = not np.any([sent[index][0][pos_idx].startswith(prefix)
+                                       for prefix in pos_prefixes])
+                    if skip:
+                        continue
                 features = fd(untagged_sent, index, length)
                 if not reader.raw:
                     pre_tags = tag_seq[:index]
@@ -79,8 +96,12 @@ def build_vocabulary(readers, fd, hd, minc=1, use_eph=False,
                 if i % 100000 == 0:
                     if verbose > 0:
                         print i,
+            if i > MAX_TOKENS:  # FIXME
+                break
         all_vocabulary.update(set((fx for fx, c in vocabulary.iteritems()
                                    if c >= minc)))
+        
+
     # If extended prediction history is used add |tags| features.
     if use_eph:
         for t in tags:
@@ -148,7 +169,7 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False,
     for sent in reader.sents():
         untagged_sent, tag_seq = zip(*sent)
         length = len(untagged_sent)
-        for index in range(length):
+        for index in xrange(length):
             if pos_prefixes != []:
                 # skip token if not one of the pos prefixes
                 skip = not np.any([sent[index][0][pos_idx].startswith(prefix)
@@ -191,6 +212,8 @@ def build_examples(reader, fd, hd, fidx_map, T, use_eph=False,
             if i % 10000 == 0:
                 if verbose > 0:
                     print i,
+        if i > MAX_TOKENS:  # FIXME
+                break
     instances = bolt.fromlist(instances, np.object)
     labels = bolt.fromlist(labels, np.float64)
     return bolt.io.MemoryDataset(len(fidx_map), instances, labels)
@@ -276,17 +299,26 @@ class GreedyTagger(Tagger):
         print "[done]"
 
         if self.use_aso:
+            from multiprocessing import Pool
+            print "_" * 80
             print "use ASO."
-            print "projecting onto subspace...",
-            sys.stdout.flush()
-            dataset = self.aso_model.project_dataset(dataset)
-            print "[done]"
+            print "projecting %d train examples onto subspace..." % dataset.n
+
+            pool = Pool(processes=1)
+            pool.map(_project_process, [(self.aso_model, dataset)])
+            pool.close()
+            del dataset
+            dataset = bolt.io.MemoryDataset.load("/tmp/dataset.npy")
 
             # Update vocabulary and feature map with ASO features.
-            for i in range(self.aso_model.thetat.shape[1]):
+            for i in xrange(self.aso_model.embedding_dim):
                 self.V.append("aso%d_cur" % i)
-                self.fidx_map["aso%d_cur" % i] = self.aso_model.thetat.shape[0] + i
+                self.fidx_map["aso%d_cur" % i] = self.aso_model.input_dim + i
 
+        gc.collect()
+        print "_" * 80
+        print
+        print "Size of  dataset: %.4f MB" % sizeof(dataset)
         print "_" * 80
         print "Training"
         print
@@ -296,7 +328,8 @@ class GreedyTagger(Tagger):
         print "classes: ", T
         print "reg: %.8f" % reg
         print "epochs: %d" % epochs
-        glm = bolt.GeneralizedLinearModel(dataset.dim, len(T), biasterm=biasterm)
+        glm = bolt.GeneralizedLinearModel(dataset.dim, len(T),
+                                          biasterm=biasterm)
 
         self._train(glm, dataset, epochs=epochs, reg=reg, verbose=self.verbose,
                     shuffle=shuffle, seed=seed, n_jobs=n_jobs)
@@ -309,7 +342,7 @@ class GreedyTagger(Tagger):
         untagged_sent = [token for (token, tag) in sent]
         length = len(untagged_sent)
         tag_seq = []
-        for index in range(length):
+        for index in xrange(length):
             w = untagged_sent[index][0]
             features = self.fd(untagged_sent, index, length)
             history = self.hd(tag_seq, untagged_sent, index, length)
@@ -343,6 +376,12 @@ class GreedyTagger(Tagger):
                              for idx in maxidx])
 
 
+def _project_process(data):
+    aso_model, dataset = data
+    dataset = aso_model.project_dataset(dataset)
+    dataset.store("/tmp/dataset.npy")
+
+
 class AvgPerceptronTagger(GreedyTagger):
     """A greedy left-to-right tagger that is based on an Averaged Perceptron.
     """
@@ -350,7 +389,8 @@ class AvgPerceptronTagger(GreedyTagger):
     def _train(self, glm, dataset, **kargs):
         epochs = kargs["epochs"]
         trainer = bolt.trainer.avgperceptron.AveragedPerceptron(epochs=epochs)
-        trainer.train(glm, dataset, shuffle=kargs["shuffle"], seed=kargs["seed"],
+        trainer.train(glm, dataset, shuffle=kargs["shuffle"],
+                      seed=kargs["seed"],
                       verbose=self.verbose)
 
 
@@ -362,5 +402,6 @@ class GreedySVMTagger(GreedyTagger):
         sgd = bolt.SGD(bolt.ModifiedHuber(), reg=kargs["reg"],
                        epochs=kargs["epochs"])
         trainer = bolt.OVA(sgd)
-        trainer.train(glm, dataset, shuffle=kargs["shuffle"], seed=kargs["seed"],
+        trainer.train(glm, dataset, shuffle=kargs["shuffle"],
+                      seed=kargs["seed"],
                       verbose=self.verbose, ncpus=kargs["n_jobs"])

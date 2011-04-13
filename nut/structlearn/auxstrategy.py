@@ -27,7 +27,6 @@ import cPickle as pickle
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from scipy import sparse
-from time import time
 from itertools import izip, count
 from collections import defaultdict
 
@@ -123,6 +122,7 @@ class ParallelTrainingStrategy(TrainingStrategy):
         if inverted_index == None:
             inverted_index = defaultdict(lambda: None)
         print "Run joblib.Parallel"
+        
         res = Parallel(n_jobs=self.n_jobs, verbose=1)(
                 delayed(_train_aux_classifier)(i, auxtask,
                                                task_mask,

@@ -270,7 +270,7 @@ class MemoryDataset(Dataset):
         return MemoryDataset(*data)
 
 
-    def store(self,fname):
+    def store(self, fname):
         """Store `Dataset` in binary form.
         Uses `numpy.save` for serialization.
 

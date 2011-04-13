@@ -15,8 +15,8 @@ import sys
 import optparse
 import numpy as np
 import re
+import gc
 
-from collections import defaultdict
 from itertools import islice
 from pprint import pprint
 
@@ -47,7 +47,6 @@ class ASO(object):
 
         print "sizeof(vocabulary): %.1f MB" % sizeof(self.vocabulary)
         print "sizeof(fidx_map):   %.1f MB" % sizeof(self.fidx_map)
-        
 
     def preselect_tasks(self, prefix):
         preselection = set()
@@ -82,12 +81,23 @@ class ASO(object):
         """
         pattern = re.compile("_|=")
         masks = {}
-        print "_"*80
+        print "_" * 80
         print "Masked features stats"
-        print 
+        print
+        print "check:",
+        try:
+            for fname in self.fidx_map.iterkeys():
+                fname.index("=")
+        except ValueError:
+            print "failed!"
+            print fname
+            assert False
+        else:
+            print "succeeded!"
+
         for token in tokens:
             masked_features = set((idx for fname, idx in self.fidx_map.iteritems()
-                                   if token in pattern.split(fname)[2:]))
+                                   if token in pattern.split(fname)[1:-1]))
             print "%s has %d masked features." % (token, len(masked_features))
             masks[token] = np.unique(masked_features)
 
@@ -117,15 +127,15 @@ class ASO(object):
         # get m most frequent current, left, and right words
         aux_tasks = []
         counts = count(dataset)
-        print "_"*80
+        print "_" * 80
         print "Auxiliary problem stats"
         print
-        for prefix in ["word_unigram_cur=", "word_unigram_pre=",
-                       "word_unigram_post="]:
+        for prefix in ["uword_cur=", "uword_pre=",
+                       "uword_post="]:
             preselection = self.preselect_tasks(prefix)
             tmp = list(islice(FreqSelector(0).select(dataset, preselection), m))
-            print ", ".join(["%s (%d)" % (self.vocabulary[tmp[i]], counts[tmp[i]])
-                             for i in range(10)])
+            print ", ".join(["%s (%d)" % (self.vocabulary[e], counts[e])
+                             for e in tmp[:10]])
             print
             aux_tasks.extend(tmp)
 
@@ -142,18 +152,23 @@ class ASO(object):
     def create_feature_type_splits(self):
         """compute begin and end idx for each feature type.
         """
-        pattern = re.compile("_|=")
-        feature_types = defaultdict(list)
+        feature_types = {}
+        min_i = -1
+        current_ftype = "DUMMY"
+
         for i, fid in enumerate(self.vocabulary):
-            ftype = pattern.split(fid, 1)[0]
-            feature_types[ftype].append(i)
-        for key, value in feature_types.iteritems():
-            value = np.array(value)
-            feature_types[key] = (value.min(), value.max())
+            ftype = fid[:fid.index("=")]
+            if ftype != current_ftype:
+                feature_types[current_ftype] = (min_i, i - 1)
+                current_ftype = ftype
+                min_i = i
+
+        feature_types[current_ftype] = (min_i, i)
+        del feature_types["DUMMY"]
 
         indices = sorted(feature_types.values())
-        for i in range(len(indices)-1):
-            assert indices[i][1]+1 == indices[i+1][0]
+        for i in xrange(len(indices) - 1):
+            assert indices[i][1] + 1 == indices[i+1][0]
         return dict(feature_types)
 
     def build_examples(self, reader, verbose=0):
@@ -163,36 +178,41 @@ class ASO(object):
                                         verbose=verbose)
         return dataset
 
-    def learn(self, m, k, verbose=0):
+    def learn(self, m, k, verbose=0, n_jobs=1):
         """Learns the ASO embedding theta.
+
+        The learned embedding is stored in `self.struct_learner.thetat`.
+        To project new data use :meth:`self.struct_learner.project`.
 
         Parameters
         ----------
-        reader : ConllReader
-            The unlabeled data reader.
+        m : int
+            The number of auxiliary tasks (per task type).
+        k : int
+            The dimensionaly of the shared representation.
+        verbose : int
+            Verbose output.
+        n_jobs : int
+            The number of processes to fork (via joblib).
         Returns
         -------
         self
         """
         print "run ASO.learn..."
-        
+
         dataset = self.dataset
-        avg = sum((x.shape[0] for x in dataset.iterinstances()))
-        avg /= float(dataset.n)
         print "|examples|: %d" % dataset.n
         print "|features|: %d" % dataset.dim
-        print "Avg. number of features: ", avg
-        print "Size of dataset: %.4f MB" % (dataset.n *
-                                         (4 + avg * (4+4)) / 1024.0 / 1024.0)
+        print "Size of dataset: %.4f MB" % sizeof(dataset)
         aux_tasks, task_masks = self.create_aux_tasks(dataset, m)
-        print "_"*80
-        
-        
+        print "_" * 80
+
         # self.print_tasks(aux_tasks)
         feature_types = self.create_feature_type_splits()
-        print "_"*80
+        print "_" * 80
         print "Feature types:"
         pprint(feature_types)
+        print "total number: %d" % len(feature_types)
         print
         self.feature_types = feature_types
 
@@ -203,7 +223,7 @@ class ASO(object):
                                                    truncate=True)
 
         #strategy = structlearn.auxstrategy.HadoopTrainingStrategy()
-        strategy = structlearn.auxstrategy.ParallelTrainingStrategy(n_jobs=3)
+        strategy = structlearn.auxstrategy.ParallelTrainingStrategy(n_jobs=n_jobs)
 
         dataset.shuffle(9)
         struct_learner = structlearn.StructLearner(k, dataset,
@@ -214,26 +234,72 @@ class ASO(object):
                                                    useinvertedindex=False,
                                                    feature_types=self.feature_types)
 
-        store_W = True
+        # FIXME store W
+        store_W = False  ## True
         # learn the embedding
         struct_learner.learn(store_W=store_W)
 
-        struct_learner.print_W_cols(range(len(aux_tasks)), self.vocabulary)
+        ##struct_learner.print_W_cols(range(len(aux_tasks)), self.vocabulary)
 
         # store data in model
         print
-        print "size of theta: %.2f MB" % (struct_learner.thetat.nbytes
-                                          / 1024.0 / 1024.0)
+        print "size of theta: %.2f MB" % sizeof(struct_learner.thetat)
         print
-        self.thetat = struct_learner.thetat
+        del struct_learner.dataset
+        self.struct_learner = struct_learner
         self.m = m
         self.k = k
+        self.input_dim = struct_learner.thetat.shape[0]
+        self.embedding_dim = struct_learner.thetat.shape[1] * \
+                             struct_learner.feature_type_split.shape[0]
         return self
 
-    
+    def post_process(self, dataset):
+        """Post process the model.
 
-    def project_dataset(self, dataset, usestandardize=True, useavgnorm=True,
-                        beta=1.0):
+        Computes mean and std of new spectral features by first projecting
+        the unlabeled dataset and then computing mean and std deviation.
+        The resulting values are stored in the model.
+
+        Parameters
+        ----------
+        dataset : bolt.io.MemoryDataset
+            The unlabeled data.
+
+        Returns
+        -------
+        self
+        """
+        print "_" * 80
+        print "Post process embedding"
+        print
+        proj_dataset = self.struct_learner.project(dataset, dense=True)
+        mean = proj_dataset.mean(axis=0)
+        std = proj_dataset.std(axis=0)
+        self.mean = mean
+        self.std = std
+        return self
+
+    def set_scaling_factor(self, dataset, proj_dataset):
+        print "compute scaling factor"
+        sparse_norm = sum((np.linalg.norm(x['f1'])
+                           for x in dataset.iterinstances()))
+        sparse_norm /= dataset.n
+        print "sparse_norm:", sparse_norm
+
+        norms = [np.linalg.norm(x) for x in proj_dataset]
+        dense_norm = np.mean(norms)
+        print "dense_norm:", dense_norm
+        scaling_factor = sparse_norm / dense_norm
+        
+        scaling_factor *= 10.0  # FIXME
+        print "scaling factor: %.4f" % scaling_factor
+
+        # store scaling factor for future use
+        self.scaling_factor = scaling_factor
+
+    @timeit
+    def project_dataset(self, dataset):
         """Project dataset onto the subspace induced by theta
         and concatenate the new features with the original
         features.
@@ -242,72 +308,49 @@ class ASO(object):
         ----------
         dataset : bolt.io.MemoryDataset
             The dataset to project.
-        usestandardize : bool, True
-            Whether or not the projected features should be standardized.
-            If so mean and std are stored.
-        useavgnorm : bool, True
-            Whether to scale the projected features such that their L2 norm
-            equals the L2 norm of the sparse features.
-        beta : float, 1.0
-            Scaling factor for the projected features.
-
+        
         Returns
         -------
         dataset : bolt.io.MemoryDataset
             The new dataset with dataset.dim = dataset.dim
             + thetat.shape[1]
         """
-        assert dataset.dim == self.thetat.shape[0]
+        assert dataset.dim == self.input_dim
         # get projection as dense array
-        proj_dataset = structlearn.project(dataset,
-                                           self.thetat,
-                                           dense=True)
+        proj_dataset = self.struct_learner.project(dataset,
+                                                   dense=True)
 
-        if usestandardize:
-            mean = proj_dataset.mean(axis=0)
+        dim = proj_dataset.shape[1]
+        assert proj_dataset.shape[0] == dataset.n
+        assert proj_dataset.shape[1] == self.embedding_dim
+
+        if not (hasattr(self, "mean") or hasattr(self, "std")):
+            self.mean = proj_dataset.mean(axis=0)
             std = proj_dataset.std(axis=0)
-            self.mean = mean
+            std[std == 0.0] = 1.0
             self.std = std
-            structlearn.standardize(proj_dataset, mean, std, 1.0)
+            
+        structlearn.standardize(proj_dataset, self.mean, self.std, 1.0)
 
-        if useavgnorm:
-            sparse_norm = sum((np.linalg.norm(x['f1'])
-                            for x in dataset.iterinstances()))
-            sparse_norm /= dataset.n
-            print "sparse_norm:", sparse_norm
-            norms = np.sqrt((proj_dataset * proj_dataset).sum(axis=1))
-            dense_norm = np.mean(norms)
-            print "dense_norm:", dense_norm
-            scaling_factor = sparse_norm / dense_norm
+        ## if not hasattr(self, "scaling_factor"):
+##             self.set_scaling_factor(dataset, proj_dataset)
 
-            # scale dense features and store scaling factor for future use
-            proj_dataset *= scaling_factor
-            self.scaling_factor = scaling_factor
-
-            ## recompute dense norm and assert if equal to sparse norm
-            #norms = np.sqrt((proj_dataset * proj_dataset).sum(axis=1))
-            #dense_norm = np.mean(norms)
-            #np.testing.assert_almost_equal(dense_norm, sparse_norm, decimal=4)
-
-        # we have to scale by beta at last because otherwise
-        # the above assert will break.
-        self.beta = beta
-        proj_dataset *= beta
+##         proj_dataset *= self.scaling_factor
 
         # from dense array to MemoryDataset
         proj_dataset = structlearn.to_sparse_bolt(proj_dataset)
-        dim = self.thetat.shape[1]
-        labels = dataset.labels
-        proj_dataset = bolt.io.MemoryDataset(dim, proj_dataset, labels)
+        
+        proj_dataset = bolt.io.MemoryDataset(dim, proj_dataset, dataset.labels)
         proj_dataset._idx = dataset._idx
-
+        
         # concat both MemoryDatasets
         new_dataset = structlearn.concat_datasets(dataset, proj_dataset)
 
-        assert new_dataset.dim == dataset.dim + self.thetat.shape[1]
+        assert new_dataset.dim == (dataset.dim + self.embedding_dim)
+        
         return new_dataset
 
-    def project_instance(self, instance, usestandardize=True, useavgnorm=True):
+    def project_instance(self, instance):
         """Project instance onto the subspace induced by theta
         and concatenate the new features with the original
         features.
@@ -315,31 +358,26 @@ class ASO(object):
         Returns
         -------
         new_instance : array, dtype=bolt.sparsedtype
-            The new instance with size instance.shape[0] + thetat.shape[1]
+            The new instance.
         """
-        proj_instance = structlearn.project_instance_dense(instance,
-                                                           self.thetat)
-        if usestandardize:
-            # save to scale by beta before average norm scaling factor.
-            structlearn.standardize(proj_instance, self.mean, self.std,
-                                    self.beta)
+        proj_instance = self.struct_learner.project_instance_dense(instance)
+        if hasattr(self, "mean") and hasattr(self, "std"):
+            structlearn.standardize(proj_instance, self.mean, self.std)
 
-        if useavgnorm:
+        if hasattr(self, "scaling_factor"):
             proj_instance *= self.scaling_factor
 
         proj_instance = bolt.dense2sparse(proj_instance)
-        new_instance = structlearn.concat_instances(instance,
-                                                    proj_instance,
-                                                    self.thetat.shape[0])
-        assert new_instance.shape[0] == instance.shape[0] + self.thetat.shape[1]
-        return new_instance
+        return structlearn.concat_instances(instance,
+                                            proj_instance,
+                                            self.input_dim)
 
 
 def train_args_parser():
     """Create argument and option parser for the
     training script.
     """
-    description = """Training script for Alternating Structural Optimization. """
+    description = "Training script for Alternating Structural Optimization."
     parser = optparse.OptionParser(usage="%prog [options] " \
                                    "train_file unlabeled_file model_file",
                                    version="%prog " + __version__,
@@ -354,7 +392,7 @@ def train_args_parser():
                       dest="feature_module",
                       help="The module in the features package containing the" \
                       " `fd` and `hd` functions. [default %default].",
-                      default="rr09",
+                      default="rr09_aso",
                       metavar="str",
                       type="str")
     parser.add_option("-m",
@@ -381,6 +419,12 @@ def train_args_parser():
                       dest="epochs",
                       help="Number of training epochs [default %default]. ",
                       default=100,
+                      metavar="int",
+                      type="int")
+    parser.add_option("--n-jobs",
+                      dest="n_jobs",
+                      help="Number of cpus to use [default %default].",
+                      default=3,
                       metavar="int",
                       type="int")
     parser.add_option("--min-count",
@@ -466,32 +510,43 @@ def train():
                                        fd, hd, minc=[options.minc,
                                                      options.minc + 4],
                                        use_eph=options.use_eph,
-                                       verbose=options.verbose)
+                                       verbose=options.verbose,
+                                       pos_prefixes=[[], ["NN", "JJ"]])
         print "|V|:", len(V)
         print "|T|:", len(T)
         print
         model = ASO(fd, hd, V, T, use_eph=options.use_eph)
 
+    gc.collect()
     if not hasattr(model, "dataset"):
         print "_" * 80
         print "Build examples"
         print
-        dataset = model.build_examples(unlabeled_reader, verbose=options.verbose)
+        dataset = model.build_examples(unlabeled_reader,
+                                       verbose=options.verbose)
+        print "Size of dataset: %.2f MB" % sizeof(dataset)
         model.dataset = dataset
 
+    gc.collect()
     if not options.no_learn:
         print "_" * 80
         print "Learn theta"
         print "m:", options.m
         print "k:", options.k
         print
-        model.learn(options.m, options.k, verbose=options.verbose)
+        model.learn(options.m, options.k, verbose=options.verbose,
+                    n_jobs=options.n_jobs)
+        # model.post_process(model.dataset)
+        del model.dataset
 
     # Store meta data in model
     model.lang = options.lang
     model.minc = options.minc
 
+    gc.collect()
     # dump the model
     print "_" * 80
     print "Dump model"
+    raw_input("hit any key to continue.")
     compressed_dump(f_model, model)
+    print "model dumped to %s." % f_model

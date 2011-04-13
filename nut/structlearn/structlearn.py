@@ -103,7 +103,7 @@ class StructLearner(object):
             feature_type_split = [(0, dataset.dim - 1)]
         else:
             feature_type_split = sorted(feature_types.values())
-        self.feature_type_split = feature_type_split
+        self.feature_type_split = np.array(feature_type_split)
 
     @timeit
     def create_inverted_index(self):
@@ -139,7 +139,6 @@ class StructLearner(object):
             self.W = W
         if compute_svd:
             self.thetat = self.compute_svd(W)
-            print "shape of Theta^T = (%d,%d)" % self.thetat.shape
 
     def print_W_cols(self, task_idx, vocabulary, n_terms=10, n_cols=10):
         if not hasattr(self, "W"):
@@ -160,7 +159,6 @@ class StructLearner(object):
                           izip(w.indices[idx], w.data[idx])]
             print "%s: %s" % (str(task), ", ".join(corr_terms))
 
-
     def compute_svd(self, W):
         """Compute the sparse SVD of W.
 
@@ -173,18 +171,20 @@ class StructLearner(object):
         W : array, shape = [n_features, n_auxtasks]
             The weight matrix, each column vector represents
             one auxiliary classifier.
+
+        Returns
+        -------
+        array, shape = [n_features, k]
+            Theta transposed.
         """
         k = self.k
 
-        # feature splits need to be sorted in asc order
-        feature_type_split = sorted(self.feature_type_split)
-
         # create theta^t
-        thetat = np.zeros((W.shape[0], k * len(feature_type_split)),
+        thetat = np.zeros((W.shape[0], k),
                           dtype=np.float64)
-        col_offset = 0
-        for f_min, f_max in feature_type_split:
-            print "_"*80
+        #col_offset = 0
+        for f_min, f_max in self.feature_type_split:
+            print "_" * 40
             print "block (%d, %d)" % (f_min, f_max)
             A = W[f_min:f_max + 1]
             print "A.nnz:", A.nnz
@@ -195,47 +195,96 @@ class StructLearner(object):
                 print "skip block (%d, %d)" % (f_min, f_max)
                 continue
             print "Spectrum: %.4f - %.4f" % (s.min(), s.max())
+
             # check feature span of Ut
             span = (f_max + 1) - f_min
             assert Ut.shape[1] == span
 
-            thetat[f_min:f_max + 1, col_offset:col_offset + Ut.shape[0]] = Ut.T
-            col_offset += Ut.shape[0]
+            # If Ut.shape[0] != k the missing cols of thetat are padded with zeros.
+            thetat[f_min:f_max + 1, :Ut.shape[0]] = Ut.T
 
-        thetat = thetat[:, :col_offset]
-        print "_"*80
-        print "thetat.shape", thetat.shape
         if thetat == None:
             raise Exception("Error in compute_svd; spectrum is too small. "\
                             "It seems that W is too sparse?")
+        print "_" * 80
+        print "thetat.shape", thetat.shape
+        print "dim of embedding: %d" % (thetat.shape[1] * \
+                                        self.feature_type_split.shape[0])
         return thetat
 
+    @timeit
+    def project(self, dataset, dense=True):
+        """Project `dataset` onto subspace induced by `self.thetat`.
 
-def project_instance_dense(x, thetat):
-    tmp = np.zeros((thetat.shape[1],), dtype=np.float64)
-    for j, v in x:
-        tmp += v * thetat[j]
-    return tmp
+        Parameters
+        ----------
+        dataset : bolt.io.MemoryDataset
+            The dataset.
+        dense : bool
+            Whether a numpy array should be returned or a MemoryDataset.
+
+        Returns
+        -------
+        np.ndarray or bolt.io.MemoryDataset
+        """
+        dim, k = self.thetat.shape
+        n_splits = self.feature_type_split.shape[0]
+        dataset_prime = np.zeros((dataset.n, k * n_splits),
+                                 dtype=np.float32)
+        if n_splits == 1:
+            projector = self.project_instance_dense_nosplit
+        else:
+            projector = self.project_instance_dense
+        for i, x in enumerate(dataset.instances):
+            dataset_prime[i] = projector(x)
+        if not dense:
+            instances = to_sparse_bolt(dataset_prime)
+            dim = k
+            dataset_prime = bolt.io.MemoryDataset(dim, instances,
+                                                  dataset.labels)
+            dataset_prime._idx = dataset._idx
+        return dataset_prime
+
+    def project_instance_dense(self, x):
+        """Project dense instance `x` onto subspace induced by `thetat`.
+        Takes into account the feature splits. """
+        feature_type_split = self.feature_type_split
+        dim, k = self.thetat.shape
+        res = np.zeros((k * feature_type_split.shape[0],), dtype=np.float32)
+        assert x.dtype == bolt.sparsedtype
+        type_indices = np.searchsorted(feature_type_split[:, 0], x['f0'],
+                                       side="right")
+        for (j, v), idx in izip(x, type_indices):
+            assert j < dim
+            res[(idx-1) * k:idx * k] += (v * self.thetat[j])
+        return res
+
+    def project_instance_dense_nosplit(self, x):
+        """Project dense instance `x` onto subspace induced by `thetat`."""
+        res = np.zeros((self.thetat.shape[1],), dtype=np.float32)
+        for j, v in x:
+            res += v * self.thetat[j]
+        return res
 
 
-@timeit
-def project(dataset, thetat, dense=True):
-    """Projects the `bolt.io.MemoryDataset` onto the feature space
-    induced by `thetat`.
+## @timeit
+## def project(dataset, thetat, dense=True):
+##     """Projects the `bolt.io.MemoryDataset` onto the feature space
+##     induced by `thetat`.
 
-    If `dense` is True it returns a new numpy array (a design matrix);
-    else it returns a new `bolt.io.MemoryDataset`.
-    """
-    dim, k = thetat.shape
-    dataset_prime = np.empty((dataset.n, k), dtype=np.float64)
-    for i, x in enumerate(dataset.instances):
-        dataset_prime[i] = project_instance_dense(x, thetat)
-    if not dense:
-        instances = to_sparse_bolt(dataset_prime)
-        dim = k
-        dataset_prime = bolt.io.MemoryDataset(dim, instances, dataset.labels)
-        dataset_prime._idx = dataset._idx
-    return dataset_prime
+##     If `dense` is True it returns a new numpy array (a design matrix);
+##     else it returns a new `bolt.io.MemoryDataset`.
+##     """
+##     dim, k = thetat.shape
+##     dataset_prime = np.empty((dataset.n, k), dtype=np.float32)
+##     for i, x in enumerate(dataset.instances):
+##         dataset_prime[i] = project_instance_dense(x, thetat)
+##     if not dense:
+##         instances = to_sparse_bolt(dataset_prime)
+##         dim = k
+##         dataset_prime = bolt.io.MemoryDataset(dim, instances, dataset.labels)
+##         dataset_prime._idx = dataset._idx
+##     return dataset_prime
 
 
 @timeit
@@ -263,7 +312,7 @@ def concat_datasets(a, b):
     assert a.n == b.n
     dim_a = a.dim
     res = np.empty((a.n,), dtype=np.object)
-    for i in range(a.n):
+    for i in xrange(a.n):
         instance_a = a.instances[i]
         instance_b = b.instances[i]
         res[i] = concat_instances(instance_a, instance_b,
@@ -308,35 +357,17 @@ def standardize(docterms, mean, std, beta=1.0):
 
 def to_sparse_bolt(X):
     """Convert n x dim numpy array to sequence of bolt instances.
+
+    Parameters
+    ----------
+    X : ndarray, shape = [n, dim]
+
+    Returns
+    -------
+    ndarray, dtype=np.object
+        An object array containing n recarrays.
     """
-    res = np.empty((len(X),), dtype=np.object)
+    res = np.empty((X.shape[0],), dtype=np.object)
     for i, x in enumerate(X):
         res[i] = bolt.dense2sparse(x)
     return bolt.fromlist(res, np.object)
-
-
-def compute_svd(W, feature_type_split, k):
-    thetat = None
-
-    # feature splits need to be sorted in asc order
-    feature_type_split = sorted(feature_type_split)
-
-    for f_min, f_max in feature_type_split:
-        Ut, s, Vt = sparsesvd.sparsesvd(W[f_min:f_max + 1], k)
-        span = (f_max + 1) - f_min
-
-        # pad Ut with zeros the get shape[0]==k
-        if Ut.shape[0] != k:
-            diff = k - Ut.shape[0]
-            padding = np.zeros((diff, Ut.shape[1]), dtype=np.float64)
-            Ut = np.r_[Ut, padding]
-
-        # check feature span of Ut
-        assert Ut.shape[1] == span
-
-        if thetat == None:
-            thetat = Ut.T
-        else:
-            thetat = np.r_[thetat, Ut.T]
-
-    return thetat
