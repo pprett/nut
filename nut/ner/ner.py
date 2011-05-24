@@ -38,7 +38,7 @@ def train_args_parser():
     parser.add_option("-f", "--feature-module",
                       dest="feature_module",
                       help="The module in the features package containing " \
-                      "the `fd` and `hd` functions. [Default: %default].",
+                      "the `detector` class. [Default: %default].",
                       default="rr09",
                       metavar="str",
                       type="str")
@@ -130,8 +130,7 @@ def train():
     try:
         import_path = "nut.ner.features.%s" % options.feature_module
         mod = __import__(import_path, fromlist=[options.feature_module])
-        fd = mod.fd
-        hd = mod.hd
+        detector = mod.Detector()
     except ImportError:
         print "Error: cannot import feature extractors " \
               "from %s" % options.feature_module
@@ -146,7 +145,7 @@ def train():
         print "[done]"
 
         # Create Tagger from ASOModel
-        model = tagger.GreedySVMTagger(aso_model.fd, aso_model.hd,
+        model = tagger.GreedySVMTagger(aso_model.detector,
                                        lang=aso_model.lang,
                                        verbose=options.verbose)
         if options.use_eph != aso_model.use_eph:
@@ -168,9 +167,9 @@ def train():
 
     else:
 
-        #model = tagger.AvgPerceptronTagger(fd, hd, verbose=options.verbose)
-        model = tagger.GreedySVMTagger(fd, hd, lang=options.lang,
-                                   verbose=options.verbose)
+        #model = tagger.AvgPerceptronTagger(detector, verbose=options.verbose)
+        model = tagger.GreedySVMTagger(detector, lang=options.lang,
+                                       verbose=options.verbose)
         model.feature_extraction(train_reader, minc=options.minc,
                                  use_eph=options.use_eph)
 
