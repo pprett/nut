@@ -6,14 +6,13 @@ Gazetteer features for named entity recognition.
 """
 from __future__ import division
 
-from collections import defaultdict
-from ..util import WordTokenizer
 
 def encode_iob(i, length):
     enc = "I"
     if i == 0:
         enc = "B"
     return enc
+
 
 def encode_bilou(i, length):
     enc = "I"
@@ -25,7 +24,7 @@ def encode_bilou(i, length):
     elif length > 1 and i == (length - 1):
         enc = "L"
     return enc
-    
+
 
 class Gazetteer(object):
     """An gazetteer (word list) abstraction. Each concept in the
@@ -50,7 +49,6 @@ class Gazetteer(object):
     def __init__(self, fname, encoding="iob"):
         self.fname = fname
         encoder = {"iob": encode_iob, "bilou": encode_bilou}[encoding]
-        tokenizer = WordTokenizer()
         gazetteer = {}
 
         fd = open(fname)
