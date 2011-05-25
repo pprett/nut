@@ -6,6 +6,7 @@ import sys
 from itertools import izip
 
 from nut.io import conll, compressed_dump, compressed_load
+from nut.util import WordTokenizer
 
 def main(argv):
     print __doc__
@@ -17,6 +18,8 @@ def main(argv):
     print "_" * 80
     print "Enter sentences to tag"
     print
+
+    tokenizer = WordTokenizer()
     while True:
         sent = raw_input("input> ")
 
@@ -24,7 +27,7 @@ def main(argv):
             print "Bye!"
             break
         
-        tokens = sent.strip().split()
+        tokens = tokenizer.tokenize(sent)
         sent = [((token, "", ""), "") for token in tokens]
         output = ["%s/%s" % (token, tag) for token, tag
                   in izip(tokens, model.tag(sent))]
@@ -34,6 +37,7 @@ def main(argv):
     
 
 if __name__ == "__main__":
-    if len(sys.argv) != 1:
+    if len(sys.argv) != 2:
         print "Usage: %s <model>" % sys.argv[0]
+        sys.exit(-2)
     main(sys.argv[1:])
