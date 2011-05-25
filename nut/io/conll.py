@@ -22,40 +22,40 @@ class Conll03Reader(object):
     """Corpus reader for CoNLL 2003 shared task on
     Named Entity Recognition.
 
-    
-
     Parameters
     ----------
     path : str
         The path to the iob file.
     lang : str
-        The language of the text (either 'en' or 'de'). 
-    iob : int, 1 or 2 or 3
-        The iob encoding to be used.
+        The language of the text (either 'en' or 'de').
+    iob : bool
+        Whether or not iob encoding should be used (default True).
     raw : bool
         True if file is unlabeled (missing tag column).
         All tokens are given the tag `Unk`.
+    outside : str
+        The tag for outside tokens (default 'O').
+    tags : set
+        The set of tags to be considered. For all other tags
+        `outside` will be returned.
     """
-    def __init__(self, path, lang, iob=1, raw=False):
+    def __init__(self, path, lang, iob=True, raw=False, outside="O", tags=[]):
         self._path = os.path.normpath(path)
-        fname = os.path.split(self._path)[-1]
         if lang == "en":
             self._select = [0, 1, 2]
         elif lang == "de":
             self._select = [0, 2, 3, 1]
         else:
             raise ValueError("lang must be either en or de.")
-        if iob not in [0, 1, 2]:
-            raise ValueError("iob must be either 0, 1, or 2.")
         self.iob = iob
-        self.raw = False
         self.raw = raw
+        self.outside = outside
+        self.tags = set(tags)
 
     def __iter__(self):
         """Iterate over the corpus; i.e. tokens.
         """
         fd = codecs.open(self._path, mode="rt", encoding="latin1")
-        begin = True
         try:
             for line in fd:
                 line = line.encode("utf8")
@@ -63,28 +63,28 @@ class Conll03Reader(object):
                 if line.startswith("-DOCSTART-"):
                     yield "</doc>"
                     yield "<doc>"
-                    begin = True
                 elif line == "":
                     # new sentence - emit sentence end and begin
                     yield "</s>"
                     yield "<s>"
-                    begin = True
                 else:
                     fields = line.split()
                     if self.raw:
                         fields.append("Unk")
                     # emit (token, tag) tuple
                     tag = fields[-1]
+
+                    # check if tag in tag set otherwise set to outside
+                    if tag != self.outside and self.tags:
+                        if tag.split("-")[1] not in self.tags:
+                            tag = self.outside
+
                     token = fields[:-1]
                     token = [token[i] for i in self._select]
 
-                    if self.iob == 2 and tag.startswith("I") and begin == True:
-                        tag = "B" + tag[1:]
-                        begin = False
-                    if tag == "O":
-                        begin = True
-                    if self.iob == 0 and tag != "O":
+                    if not self.iob and tag != self.outside:
                         tag = tag.split("-")[1]
+
                     yield (token, tag)
             yield "</doc>"
             yield "<doc>"

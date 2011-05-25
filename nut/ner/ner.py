@@ -102,7 +102,7 @@ def train_args_parser():
     parser.add_option("--aso",
                       dest="aso",
                       default=False,
-                      help="Give an Alternating Structural Optimization model.",
+                      help="Give an ASO model.",
                       metavar="str",
                       type="str")
     parser.add_option("--n-jobs",
@@ -111,6 +111,13 @@ def train_args_parser():
                       default=3,
                       metavar="int",
                       type="int")
+    parser.add_option("--tags",
+                      dest="tags",
+                      default="",
+                      help="The tags to consider, " \
+                      "tags are separated by comma ('ORG,LOC,PER').",
+                      metavar="str",
+                      type="str")
 
     return parser
 
@@ -126,6 +133,7 @@ def train():
     # get filenames
     f_train = argv[0]
     f_model = argv[1]
+
     # get feature extraction module
     try:
         import_path = "nut.ner.features.%s" % options.feature_module
@@ -136,7 +144,11 @@ def train():
               "from %s" % options.feature_module
         sys.exit(-2)
 
-    train_reader = conll.Conll03Reader(f_train, options.lang)
+    tag_str = options.tags
+    tags = [tag.upper() for tag in tag_str.split(",")]
+
+    print "Tags to consider: ", tags
+    train_reader = conll.Conll03Reader(f_train, options.lang, tags=tags)
 
     if options.aso:
         print "Loading ASO model...",
@@ -175,15 +187,24 @@ def train():
 
     model.train(train_reader, reg=options.reg, epochs=options.epochs,
                 shuffle=options.shuffle, seed=options.seed,
-                n_jobs=options.n_jobs, biasterm=options.biasterm)
+                n_jobs=options.n_jobs, biasterm=options.biasterm,
+                norm=2)
+
     if options.stats:
         print "_" * 80
-        print " Stats\n"
+        print "Stats"
+        print
+        print "Weights: ", model.glm.W.shape
+        W_nnz = (model.glm.W != 0.0).sum()
+        density = float(W_nnz) / (model.glm.m * model.glm.k)
+        print "Density: %.2f" % density
+        print "Size (MBs): %.2f" % (float(W_nnz * 8) / 1024.0 / 1024.0)
+        print
         model.describe(k=40)
-        nnz = 0
-        for instance in model.dataset.iterinstances():
-            nnz += instance.shape[0]
-        print "avg. nnz: %.4f" % (float(nnz) / model.dataset.n)
+        #nnz = 0
+        #for instance in model.dataset.iterinstances():
+        #    nnz += instance.shape[0]
+        #print "avg. nnz: %.4f" % (float(nnz) / model.dataset.n)
 
     compressed_dump(f_model, model)
 
@@ -215,7 +236,7 @@ def predict():
     print >> sys.stderr, "[done]"
     print >> sys.stderr, "use_eph: ", model.use_eph
     print >> sys.stderr, "use_aso: ", model.use_aso
-    test_reader = conll.Conll03Reader(argv[1], model.lang)
+    test_reader = conll.Conll03Reader(argv[1], model.lang, tags=model.tags)
     if argv[2] != "-":
         f = open(argv[2], "w+")
     else:

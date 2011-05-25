@@ -315,8 +315,23 @@ class GreedyTagger(Tagger):
         self.tag_map = dict([(i, t) for i, t in enumerate(T)])
 
     @timeit
-    def train(self, train_reader, reg=0.0001, epochs=30, shuffle=False,
-              seed=13, n_jobs=1, biasterm=True):
+    def train(self, train_reader, biasterm=True, **kargs):
+        """Trains the tagger on the given `train_reader`.
+
+        This is a template method, it does some housekeeping and
+        dispatches to `self._train` implemented by the concrete
+        GreedyTagger classes. Keyword arguments are passed on
+        to `self._train`.
+
+        Parameters
+        ----------
+        train_reader : ConllReader
+            A reader class for the training data.
+        biasterm : bool
+            Whether or not the model should use biased hyperplanes.
+        kargs : dict
+            Keyword arguments passed to `_train`.
+        """
         T = self.T
         # Create EPH if necessary
         if self.use_eph:
@@ -356,19 +371,38 @@ class GreedyTagger(Tagger):
         print "num features: %d" % dataset.dim
         print "num classes: %d" % len(T)
         print "classes: ", T
-        print "reg: %.8f" % reg
-        print "epochs: %d" % epochs
         glm = bolt.GeneralizedLinearModel(dataset.dim, len(T),
                                           biasterm=biasterm)
 
-        self._train(glm, dataset, epochs=epochs, reg=reg, verbose=self.verbose,
-                    shuffle=shuffle, seed=seed, n_jobs=n_jobs)
+        #self._train(glm, dataset, epochs=epochs, reg=reg, verbose=self.verbose,
+        #            shuffle=shuffle, seed=seed, n_jobs=n_jobs, **kargs)
+        self._train(glm, dataset, verbose=self.verbose, **kargs)
         self.glm = glm
+        self.tags = train_reader.tags
 
     def _train(self, glm, dataset, **kargs):
+        """Template method; implemented by sub classes.
+        """
         raise NotImplementedError
 
     def tag(self, sent):
+        """Tag a sequence of tokens. Returns a generator over the
+        output tag sequence.
+
+        Parameters
+        ----------
+        sent : seq of tuples
+            The sentence to tag. A sent is represented by a seq
+            of tuples (tag, token). The token is again a tuple,
+            usually token = (word, pos, np).
+
+        Example
+        -------
+        >>> sent = [(('Peter', 'NNP', 'I-NP'), ''),
+                    (('Blackburn', 'NNP', 'I-NP'), '')]
+        >>> [t for t in tagger.tag(sent)]
+        ['B-PER', 'I-PER']
+        """
         untagged_sent = [token for (token, tag) in sent]
         length = len(untagged_sent)
         tag_seq = []
@@ -431,7 +465,7 @@ class GreedySVMTagger(GreedyTagger):
     """
     def _train(self, glm, dataset, **kargs):
         sgd = bolt.SGD(bolt.ModifiedHuber(), reg=kargs["reg"],
-                       epochs=kargs["epochs"])
+                       epochs=kargs["epochs"], norm=kargs.get("norm", 2))
         trainer = bolt.OVA(sgd)
         trainer.train(glm, dataset, shuffle=kargs["shuffle"],
                       seed=kargs["seed"],
