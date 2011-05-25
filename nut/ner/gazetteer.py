@@ -40,10 +40,6 @@ class Gazetteer(object):
     ----------
     encoding : str (either 'iob' or '')
         How the concepts in the gazetteer are represented (= encoded).
-
-    Attributes
-    ----------
-    `fifo` : the FIFO datastructure holding the events.
     """
 
     def __init__(self, fname, encoding="iob"):
