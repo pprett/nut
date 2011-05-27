@@ -40,16 +40,25 @@ class Gazetteer(object):
     ----------
     encoding : str (either 'iob' or '')
         How the concepts in the gazetteer are represented (= encoded).
+
+    Example
+    -------
+    >>> gaz = Gazetteer('wikipersons.txt', encoding='iob')
+    >>> gaz['John']
+    'BI'
     """
 
-    def __init__(self, fname, encoding="iob"):
+    def __init__(self, fname, encoding="iob", casesensitive=True):
         self.fname = fname
+        self.casesensitive = casesensitive
         encoder = {"iob": encode_iob, "bilou": encode_bilou}[encoding]
         gazetteer = {}
 
         fd = open(fname)
         try:
             for line in fd:
+                if not self.casesensitive:
+                    line = line.lower()
                 tokens = line.strip().split()
                 length = len(tokens)
                 for i, token in enumerate(tokens):
@@ -64,7 +73,46 @@ class Gazetteer(object):
         self.gazetteer = gazetteer
 
     def __contains__(self, token):
+        if not self.casesensitive:
+            token = token.lower()
         return token in self.gazetteer
 
     def __getitem__(self, token):
+        if not self.casesensitive:
+            token = token.lower()
         return self.gazetteer[token]
+
+    def get_features(self, name, token):
+        """Returns gazetteer features for the given token.
+        Features are tuples (name, char). """
+        res = []
+        if token in self.gazetteer:
+            res = [(name, c) for c in self.gazetteer[token]]
+        return res
+
+
+class SimpleGazetteer(object):
+    """An simple gazetteer (word list) for lists of single words.
+    """
+
+    def __init__(self, fname, encoding="iob", casesensitive=True):
+        self.fname = fname
+        self.casesensitive = casesensitive
+        gazetteer = set()
+
+        fd = open(fname)
+        try:
+            for token in fd:
+                token = token.rstrip()
+                if not self.casesensitive:
+                    token = token.lower()
+                if token not in gazetteer:
+                    gazetteer.add(token)
+        finally:
+            fd.close()
+        self.gazetteer = gazetteer
+
+    def __contains__(self, token):
+        if not self.casesensitive:
+            token = token.lower()
+        return token in self.gazetteer
