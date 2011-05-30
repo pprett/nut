@@ -7,11 +7,9 @@ TOC
   * Requirements_
   * Installation_
   * Documentation_
-     * CLSCL_
-     * NER_
+     - CLSCL_
+     - NER_
   * References_
-
-CLSCL_
 
 .. _Requirements:
 
