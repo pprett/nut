@@ -1,6 +1,20 @@
 Natural language Understanding Toolkit
 ======================================
 
+TOC
+---
+
+  * Requirements_
+  * Installation_
+  * Documentation_
+     * CLSCL_
+     * NER_
+  * References_
+
+CLSCL_
+
+.. _Requirements:
+
 Requirements
 ------------
 
@@ -9,6 +23,8 @@ To install nut you need:
    * Python 2.5 or 2.6
    * Numpy (>= 1.1)
    * Sparsesvd (>= 0.1.4) [#f1]_ (only CLSCL_)
+
+.. _Installation:
 
 Installation
 ------------
@@ -25,10 +41,13 @@ Add project to python path,
 
    export PYTHONPATH=$PYTHONPATH:$HOME/workspace/nut
 
+.. _Documentation:
+
 Documentation
 -------------
 
 .. _CLSCL:
+
 CLSCL
 ~~~~~
 
@@ -92,7 +111,8 @@ Usage::
     project took 2.492 sec
     ACC: 83.05
 
-.. _ner:
+.. _NER:
+
 Named-Entity Recognition
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -201,6 +221,7 @@ You can pipe the output directly to `conlleval` to assess the model performance:
                   ORG: precision:  82.90%; recall:  78.81%; FB1:  80.80  1579
                   PER: precision:  88.81%; recall:  91.28%; FB1:  90.03  1662
 
+.. _References:
 References
 ----------
 
@@ -209,14 +230,15 @@ References
 .. [#f3] https://github.com/pprett/bolt/tree/feature-mask
 .. [#f4] For German we use the updated version of CoNLL03 by Sven Hartrumpf. 
 
-[Prettenhofer2010] Prettenhofer, P. and Stein, B., `Cross-language text classification using structural correspondence learning <http://www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
+.. [Prettenhofer2010] Prettenhofer, P. and Stein, B., `Cross-language text classification using structural correspondence learning <http://www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
 
-[Prettenhofer2011] Prettenhofer, P. and Stein, B., `Cross-lingual adaptation using structural correspondence learning <http://tist.acm.org/papers/TIST-2010-06-0137.R1.html>`_. ACM TIST (to appear). `[preprint] <http://arxiv.org/pdf/1008.0716v2>`_
+.. [Prettenhofer2011] Prettenhofer, P. and Stein, B., `Cross-lingual adaptation using structural correspondence learning <http://tist.acm.org/papers/TIST-2010-06-0137.R1.html>`_. ACM TIST (to appear). `[preprint] <http://arxiv.org/pdf/1008.0716v2>`_
 
-[Ratinov2009] Ratinov, L. and Roth, D., `Design challenges and misconceptions in named entity recognition <http://www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
+.. [Ratinov2009] Ratinov, L. and Roth, D., `Design challenges and misconceptions in named entity recognition <http://www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
 
-[Faruqui2010] Faruqui, M. and Padó S., `Training and Evaluating a German Named Entity Recognizer with Semantic Generalization`. In Proceedings of KONVENS '10
+.. [Faruqui2010] Faruqui, M. and Padó S., `Training and Evaluating a German Named Entity Recognizer with Semantic Generalization`. In Proceedings of KONVENS '10
 
+.. _Developer Notes:
 Developer Notes
 ---------------
 
