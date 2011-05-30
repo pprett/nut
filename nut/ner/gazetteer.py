@@ -53,7 +53,6 @@ class Gazetteer(object):
         self.casesensitive = casesensitive
         encoder = {"iob": encode_iob, "bilou": encode_bilou}[encoding]
         gazetteer = {}
-
         fd = open(fname)
         try:
             for line in fd:

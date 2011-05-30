@@ -17,9 +17,13 @@ To clone the repository run,
 
    git clone git://github.com/pprett/nut.git
 
-To build the extension modules run,
+To build the extension modules inplace run,
 
    python setup.py build_ext --inplace
+
+Add project to python path,
+
+   export PYTHONPATH=$PYTHONPATH:$HOME/workspace/nut
 
 Documentation
 -------------
@@ -91,7 +95,59 @@ Usage::
 Named-Entity Recognition
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-A simple greedy left-to-right sequence labeling approach to named-entity recognition (NER). 
+A simple greedy left-to-right sequence labeling approach to named entity recognition (NER). 
+
+pre-trained models
+??????????????????
+
+We provide pre-trained named entity recognizers for place, person, and organization names in English and German. To tag a sentence simply use::
+
+    >>> from nut.io import compressed_load
+    >>> from nut.util import WordTokenizer
+
+    >>> tagger = compressed_load("model_demo_en.bz2")
+    >>> tokenizer = WordTokenizer()
+    >>> tokens = tokenizer.tokenize("Peter Prettenhofer lives in Austria .")
+
+    >>> # see tagger.tag.__doc__ for input format
+    >>> sent = [((token, "", ""), "") for token in tokens]
+    >>> g = tagger.tag(sent)  # returns a generator over tags
+    >>> print(" ".join(["/".join(tt) for tt in zip(tokens, g)]))
+    Peter/B-PER Prettenhofer/I-PER lives/O in/O Austria/B-LOC ./O
+
+The feature detector modules for the pre-trained models are `en_best_v1.py` and `de_best_v1.py`. You can find them in the package `nut.ner.features`.
+In addition to baseline features (word presence, shape, pre-/suffixes) they use distributional features (brown clusters), non-local features (extended prediction history), and gazetteers (see [Ratinov, L. and Roth, D., 2009]). The models have been trained on CoNLL03 [#f4]_. Both models use neither syntactic features (e.g. part-of-speech tags, chunks) nor word lemmas, thus, minimizing the required pre-processing. Both models provide state-of-the-art performance on the CoNLL03 shared task benchmark for English (testb)::
+
+    processed 46435 tokens with 4946 phrases; found: 4864 phrases; correct: 4455.
+    accuracy:  98.01%; precision:  91.59%; recall:  90.07%; FB1:  90.83
+                  LOC: precision:  91.69%; recall:  90.53%; FB1:  91.11  1648
+                  ORG: precision:  87.36%; recall:  85.73%; FB1:  86.54  1630
+                  PER: precision:  95.84%; recall:  94.06%; FB1:  94.94  1586
+
+and German (testb)::
+
+    processed 51943 tokens with 2845 phrases; found: 2438 phrases; correct: 2168.
+    accuracy:  97.92%; precision:  88.93%; recall:  76.20%; FB1:  82.07
+                  LOC: precision:  87.67%; recall:  79.83%; FB1:  83.57  957
+                  ORG: precision:  82.62%; recall:  65.92%; FB1:  73.33  466
+                  PER: precision:  93.00%; recall:  78.02%; FB1:  84.85  1015
+
+
+To evaluate the German model on the out-domain data provided by [Faruqui, M. and Padó S., 2010] use the raw flag (`-r`) to write raw predictions (without B- and I- prefixes)::
+
+    ./ner_predict -r model_de_v1.bz2 clner/de/europarl/test.conll - | clner/scripts/conlleval -r
+    loading tagger... [done]
+    use_eph:  True
+    use_aso:  False
+    processed input in 40.9214s sec.
+    processed 110405 tokens with 2112 phrases; found: 2930 phrases; correct: 1676.
+    accuracy:  98.50%; precision:  57.20%; recall:  79.36%; FB1:  66.48
+                  LOC: precision:  91.47%; recall:  71.13%; FB1:  80.03  563
+                  ORG: precision:  43.63%; recall:  83.52%; FB1:  57.32  1673
+                  PER: precision:  62.10%; recall:  83.85%; FB1:  71.36  694
+
+
+Note that the above results cannot be compared directly to the resuls of [Faruqui, M. and Padó S., 2010] since they use a slighly different setting (incl. MISC entity).
 
 ner_train
 ?????????
@@ -128,7 +184,8 @@ templates of [Rationov & Roth, 2009] and extended prediction history
 ner_predict
 ???????????
 
-You can use the prediction script to tag new sentences and write the output to a file or to stdout. 
+You can use the prediction script to tag new sentences formatted in CoNLL format 
+and write the output to a file or to stdout. 
 You can pipe the output directly to `conlleval` to assess the model performance::
 
     ./ner_predict model_rr09.bz2 clner/en/conll03/test.iob2 - | clner/scripts/conlleval
@@ -143,20 +200,21 @@ You can pipe the output directly to `conlleval` to assess the model performance:
                   ORG: precision:  82.90%; recall:  78.81%; FB1:  80.80  1579
                   PER: precision:  88.81%; recall:  91.28%; FB1:  90.03  1662
 
-
-
 References
 ----------
 
 .. [#f1] http://pypi.python.org/pypi/sparsesvd/0.1.4
 .. [#f2] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
 .. [#f3] https://github.com/pprett/bolt/tree/feature-mask
+.. [#f4] For German we use the updated version of CoNLL03 by Sven Hartrumpf. 
 
 [Prettenhofer, P. and Stein, B., 2010] `Cross-language text classification using structural correspondence learning <http://www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
 
 [Prettenhofer, P. and Stein, B., 2011] `Cross-lingual adaptation using structural correspondence learning <http://tist.acm.org/papers/TIST-2010-06-0137.R1.html>`_. ACM TIST (to appear). `[preprint] <http://arxiv.org/pdf/1008.0716v2>`_
 
 [Ratinov, L. and Roth, D., 2009] `Design challenges and misconceptions in named entity recognition <http://www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
+
+[Faruqui, M. and Padó S., 2010] `Training and Evaluating a German Named Entity Recognizer with Semantic Generalization`. In Proceedings of KONVENS '10
 
 Developer Notes
 ---------------

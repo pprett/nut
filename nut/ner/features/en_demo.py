@@ -7,11 +7,12 @@ It uses the following feature templates:
 
   * word identity
   * word identity bigrams
-  * word shape (title, upper, hyphen, mixedcase)
+  * word shape (title, upper, hyphen, mixedcase, hyphen+title)
   * word pre-/suffixes (from 1 to 4 chars)
   * preceeding tags (i-1 and i-2)
-  * preceeding tag + current word
+  * preceeding tag + word in window
   * brown clusters (4, 6, 10, 20 prefixes)
+  * trigger words for person names (Mr, Mrs, Dr)
   * gazetteers (names from US census, places)
 
 Brown clusters from:
@@ -83,9 +84,9 @@ class Detector(object):
 
         # Regular expressions
         self.mixedcase = re.compile(r"^[A-Z]\w+[A-Z]\w*$")
-        #re.compile(r"[A-Z]*[^A-Z]+[A-Z]")
         
         self.ccwp = re.compile(r"^[A-Z]\.$")  # captialzed char with period.
+        self.tcsh = re.compile(r"^[A-Z][a-z]+-[A-Z][a-z]+$")  # title cased separated by hyphen.
 
         # Gazetteers
         self.lastnames = SimpleGazetteer("clner/en/resources/us_census_lastnames.txt")
@@ -98,6 +99,9 @@ class Detector(object):
 
 ##         self.uk_companies = Gazetteer("clner/en/resources/gazetteer/uk_companies.txt",
 ##                                       encoding="bilou")
+
+        # Trigger words
+        self.name_prefixes = set(["Mr.", "Mr", "Mrs", "Mrs.", "Dr.", "Dr"])
 
     def brown_extractor(self, name, token):
         """Creates brown features for token. For each path prefix
@@ -152,6 +156,7 @@ class Detector(object):
         shape_ccwp_cur = self.ccwp.match(context(0, WORD)) != None
         shape_abstract_cur = caseabstract(context(0, WORD))
         shape_ispunctuation_cur = word_unigram_cur in self.punctuation
+        shape_tcsh_cur = self.tcsh.match(context(0, WORD)) != None
 
         shape_islower_pre = word_unigram_pre.islower()
         shape_istitle_pre = word_unigram_pre.istitle()
@@ -163,6 +168,7 @@ class Detector(object):
         shape_ccwp_pre = self.ccwp.match(context(-1, WORD)) != None
         shape_abstract_pre = caseabstract(context(-1, WORD))
         shape_ispunctuation_pre = word_unigram_pre in self.punctuation
+        shape_tcsh_pre = self.tcsh.match(context(-1, WORD)) != None
 
         shape_islower_2pre = word_unigram_2pre.islower()
         shape_istitle_2pre = word_unigram_2pre.istitle()
@@ -174,6 +180,7 @@ class Detector(object):
         shape_ccwp_2pre = self.ccwp.match(context(-2, WORD)) != None
         shape_abstract_2pre = caseabstract(context(-2, WORD))
         shape_ispunctuation_2pre = word_unigram_2pre in self.punctuation
+        shape_tcsh_2pre = self.tcsh.match(context(-2, WORD)) != None
 
         shape_islower_post = word_unigram_post.islower()
         shape_istitle_post = word_unigram_post.istitle()
@@ -185,6 +192,7 @@ class Detector(object):
         shape_ccwp_post = self.ccwp.match(context(1, WORD)) != None
         shape_abstract_post = caseabstract(context(1, WORD))
         shape_ispunctuation_post = word_unigram_post in self.punctuation
+        shape_tcsh_post = self.tcsh.match(context(1, WORD)) != None
 
         shape_islower_2post = word_unigram_2post.islower()
         shape_istitle_2post = word_unigram_2post.istitle()
@@ -196,6 +204,7 @@ class Detector(object):
         shape_ccwp_2post = self.ccwp.match(context(2, WORD)) != None
         shape_abstract_2post = caseabstract(context(2, WORD))
         shape_ispunctuation_2post = word_unigram_2post in self.punctuation
+        shape_tcsh_2post = self.tcsh.match(context(2, WORD)) != None
 
         ## 2-4 suffixes in a 3 token window
         suffix_1_cur = word_unigram_cur[-1:]
@@ -222,6 +231,10 @@ class Detector(object):
 
         prefix_3_post = word_unigram_post[:3]
         prefix_4_post = word_unigram_post[:4]
+
+        ## Trigger word list
+        trg_name_pre = word_unigram_pre in self.name_prefixes and shape_istitle_cur
+        trg_name_2pre = word_unigram_2pre in self.name_prefixes and shape_istitle_cur
 
         ## Gazetteer features
         gaz_firstname_cur = word_unigram_cur in self.firstnames
@@ -254,7 +267,7 @@ class Detector(object):
         features.extend(self.known_places.get_features("gaz_place_post",
                                                        context(1, WORD)))
 
-        ## features.extend(self.uk_companies.get_features("gaz_org_cur",
+##         features.extend(self.uk_companies.get_features("gaz_org_cur",
 ##                                                        context(0, WORD)))
 ##         features.extend(self.uk_companies.get_features("gaz_org_pre",
 ##                                                        context(-1, WORD)))
