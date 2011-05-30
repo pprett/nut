@@ -76,7 +76,8 @@ class Conll03Reader(object):
 
                     # check if tag in tag set otherwise set to outside
                     if tag != self.outside and self.tags:
-                        if tag.split("-")[1] not in self.tags:
+                        tag_name = tag.split("-")[1] if tag.find("-") != -1 else tag
+                        if tag_name not in self.tags:
                             tag = self.outside
 
                     token = fields[:-1]
