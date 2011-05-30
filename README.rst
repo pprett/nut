@@ -8,7 +8,7 @@ To install nut you need:
 
    * Python 2.5 or 2.6
    * Numpy (>= 1.1)
-   * Sparsesvd (>= 0.1.4) [#f1]_
+   * Sparsesvd (>= 0.1.4) [#f1]_ (only CLSCL_)
 
 Installation
 ------------
@@ -28,12 +28,13 @@ Add project to python path,
 Documentation
 -------------
 
+.. _CLSCL:
 CLSCL
 ~~~~~
 
 An implementation of Cross-Language Structural Correspondence Learning (CLSCL). 
-See [Prettenhofer and Stein, 2010] for a detailed description and 
-[Prettenhofer and Stein, 2011] for more experiments and enhancements.
+See [Prettenhofer2010]_ for a detailed description and 
+[Prettenhofer2011]_ for more experiments and enhancements.
 
 The data for cross-language sentiment classification that has been used in the above
 study can be found here [#f2]_.
@@ -91,7 +92,7 @@ Usage::
     project took 2.492 sec
     ACC: 83.05
 
-
+.. _ner:
 Named-Entity Recognition
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -115,8 +116,8 @@ We provide pre-trained named entity recognizers for place, person, and organizat
     >>> print(" ".join(["/".join(tt) for tt in zip(tokens, g)]))
     Peter/B-PER Prettenhofer/I-PER lives/O in/O Austria/B-LOC ./O
 
-The feature detector modules for the pre-trained models are `en_best_v1.py` and `de_best_v1.py`. You can find them in the package `nut.ner.features`.
-In addition to baseline features (word presence, shape, pre-/suffixes) they use distributional features (brown clusters), non-local features (extended prediction history), and gazetteers (see [Ratinov, L. and Roth, D., 2009]). The models have been trained on CoNLL03 [#f4]_. Both models use neither syntactic features (e.g. part-of-speech tags, chunks) nor word lemmas, thus, minimizing the required pre-processing. Both models provide state-of-the-art performance on the CoNLL03 shared task benchmark for English (testb)::
+The feature detector modules for the pre-trained models are `en_best_v1.py` and `de_best_v1.py` and can be found in the package `nut.ner.features`.
+In addition to baseline features (word presence, shape, pre-/suffixes) they use distributional features (brown clusters), non-local features (extended prediction history), and gazetteers (see [Ratinov2009]_). The models have been trained on CoNLL03 [#f4]_. Both models use neither syntactic features (e.g. part-of-speech tags, chunks) nor word lemmas, thus, minimizing the required pre-processing. Both models provide state-of-the-art performance on the CoNLL03 shared task benchmark for English [Ratinov2009]_::
 
     processed 46435 tokens with 4946 phrases; found: 4864 phrases; correct: 4455.
     accuracy:  98.01%; precision:  91.59%; recall:  90.07%; FB1:  90.83
@@ -124,7 +125,7 @@ In addition to baseline features (word presence, shape, pre-/suffixes) they use 
                   ORG: precision:  87.36%; recall:  85.73%; FB1:  86.54  1630
                   PER: precision:  95.84%; recall:  94.06%; FB1:  94.94  1586
 
-and German (testb)::
+and German [Faruqui2010]_::
 
     processed 51943 tokens with 2845 phrases; found: 2438 phrases; correct: 2168.
     accuracy:  97.92%; precision:  88.93%; recall:  76.20%; FB1:  82.07
@@ -133,7 +134,7 @@ and German (testb)::
                   PER: precision:  93.00%; recall:  78.02%; FB1:  84.85  1015
 
 
-To evaluate the German model on the out-domain data provided by [Faruqui, M. and Padó S., 2010] use the raw flag (`-r`) to write raw predictions (without B- and I- prefixes)::
+To evaluate the German model on the out-domain data provided by [Faruqui2010]_ use the raw flag (`-r`) to write raw predictions (without B- and I- prefixes)::
 
     ./ner_predict -r model_de_v1.bz2 clner/de/europarl/test.conll - | clner/scripts/conlleval -r
     loading tagger... [done]
@@ -147,7 +148,7 @@ To evaluate the German model on the out-domain data provided by [Faruqui, M. and
                   PER: precision:  62.10%; recall:  83.85%; FB1:  71.36  694
 
 
-Note that the above results cannot be compared directly to the resuls of [Faruqui, M. and Padó S., 2010] since they use a slighly different setting (incl. MISC entity).
+Note that the above results cannot be compared directly to the resuls of [Faruqui2010]_ since they use a slighly different setting (incl. MISC entity).
 
 ner_train
 ?????????
@@ -155,8 +156,8 @@ ner_train
 Training script for NER. See ./ner_train --help for further details. 
 
 To train a conditional markov model with a greedy left-to-right decoder, the feature 
-templates of [Rationov & Roth, 2009] and extended prediction history 
-(see [Ratinov & Roth, 2009]) use::
+templates of [Rationov2009]_ and extended prediction history 
+(see [Ratinov2009]_) use::
 
     ./ner_train clner/en/conll03/train.iob2 model_rr09.bz2 -f rr09 -r 0.00001 -E 100 --shuffle --eph
     ________________________________________________________________________________
@@ -208,13 +209,13 @@ References
 .. [#f3] https://github.com/pprett/bolt/tree/feature-mask
 .. [#f4] For German we use the updated version of CoNLL03 by Sven Hartrumpf. 
 
-[Prettenhofer, P. and Stein, B., 2010] `Cross-language text classification using structural correspondence learning <http://www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
+[Prettenhofer2010] Prettenhofer, P. and Stein, B., `Cross-language text classification using structural correspondence learning <http://www.aclweb.org/anthology/P/P10/P10-1114.pdf>`_. In Proceedings of ACL '10.
 
-[Prettenhofer, P. and Stein, B., 2011] `Cross-lingual adaptation using structural correspondence learning <http://tist.acm.org/papers/TIST-2010-06-0137.R1.html>`_. ACM TIST (to appear). `[preprint] <http://arxiv.org/pdf/1008.0716v2>`_
+[Prettenhofer2011] Prettenhofer, P. and Stein, B., `Cross-lingual adaptation using structural correspondence learning <http://tist.acm.org/papers/TIST-2010-06-0137.R1.html>`_. ACM TIST (to appear). `[preprint] <http://arxiv.org/pdf/1008.0716v2>`_
 
-[Ratinov, L. and Roth, D., 2009] `Design challenges and misconceptions in named entity recognition <http://www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
+[Ratinov2009] Ratinov, L. and Roth, D., `Design challenges and misconceptions in named entity recognition <http://www.aclweb.org/anthology/W/W09/W09-1119.pdf>`_. In Proceedings of CoNLL '09.
 
-[Faruqui, M. and Padó S., 2010] `Training and Evaluating a German Named Entity Recognizer with Semantic Generalization`. In Proceedings of KONVENS '10
+[Faruqui2010] Faruqui, M. and Padó S., `Training and Evaluating a German Named Entity Recognizer with Semantic Generalization`. In Proceedings of KONVENS '10
 
 Developer Notes
 ---------------
