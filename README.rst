@@ -136,6 +136,10 @@ We provide pre-trained named entity recognizers for place, person, and organizat
     >>> print(" ".join(["/".join(tt) for tt in zip(tokens, g)]))
     Peter/B-PER Prettenhofer/I-PER lives/O in/O Austria/B-LOC ./O
 
+You can also use the convenience demo script `ner_demo.py`::
+
+    $ python ner_demo.py model_en_v1.bz2
+
 The feature detector modules for the pre-trained models are `en_best_v1.py` and `de_best_v1.py` and can be found in the package `nut.ner.features`.
 In addition to baseline features (word presence, shape, pre-/suffixes) they use distributional features (brown clusters), non-local features (extended prediction history), and gazetteers (see [Ratinov2009]_). The models have been trained on CoNLL03 [#f4]_. Both models use neither syntactic features (e.g. part-of-speech tags, chunks) nor word lemmas, thus, minimizing the required pre-processing. Both models provide state-of-the-art performance on the CoNLL03 shared task benchmark for English [Ratinov2009]_::
 
