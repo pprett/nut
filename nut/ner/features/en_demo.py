@@ -21,6 +21,7 @@ for Semi-Supervised Learning'. In ACL '10.
 """
 import re
 from itertools import izip
+from string import punctuation
 
 from ..wordembedding import BrownClusters
 from ..gazetteer import Gazetteer, SimpleGazetteer
@@ -28,6 +29,10 @@ from ..gazetteer import Gazetteer, SimpleGazetteer
 
 WORD, POS, NP, LEMMA = 0, 1, 2, 3
 
+
+# ------------------------------------------------------------------------------
+# Helper functions
+# ------------------------------------------------------------------------------
 
 def numify(s):
     """abstract repr of a token containing digits.
@@ -63,16 +68,23 @@ def caseabstract(s):
     return "".join([code(c) for c in s])
 
 
+# ------------------------------------------------------------------------------
+# The detector
+# ------------------------------------------------------------------------------
+
+
 class Detector(object):
 
     def __init__(self):
+        self.punctuation = set(punctuation)
         self.brown_clusters = BrownClusters("clner/en/resources/brown-clusters/" + 
                                             "brown-clusters.txt",
                                             prefixes=[4, 6, 10, 20])
 
         # Regular expressions
-        self.mixedcase = re.compile(r"[A-Z]*[^A-Z]+[A-Z]")
-        #re.compile(r"^[A-Z]\w+[A-Z]\w+$")
+        self.mixedcase = re.compile(r"^[A-Z]\w+[A-Z]\w*$")
+        #re.compile(r"[A-Z]*[^A-Z]+[A-Z]")
+        
         self.ccwp = re.compile(r"^[A-Z]\.$")  # captialzed char with period.
 
         # Gazetteers
@@ -82,10 +94,10 @@ class Detector(object):
                                       encoding="bilou")
 
         ## self.us_companies = Gazetteer("clner/en/resources/us_companies.txt",
-##                                       encoding="bilou", casesensitive=False)
+##                                       encoding="bilou")
 
 ##         self.uk_companies = Gazetteer("clner/en/resources/gazetteer/uk_companies.txt",
-##                                       encoding="bilou", casesensitive=False)
+##                                       encoding="bilou")
 
     def brown_extractor(self, name, token):
         """Creates brown features for token. For each path prefix
@@ -139,6 +151,7 @@ class Detector(object):
         shape_mixedcase_cur = self.mixedcase.match(context(0, WORD)) != None
         shape_ccwp_cur = self.ccwp.match(context(0, WORD)) != None
         shape_abstract_cur = caseabstract(context(0, WORD))
+        shape_ispunctuation_cur = word_unigram_cur in self.punctuation
 
         shape_islower_pre = word_unigram_pre.islower()
         shape_istitle_pre = word_unigram_pre.istitle()
@@ -148,7 +161,8 @@ class Detector(object):
         shape_isalnum_pre = context(-1, WORD).isalnum()
         shape_mixedcase_pre = self.mixedcase.match(context(-1, WORD)) != None
         shape_ccwp_pre = self.ccwp.match(context(-1, WORD)) != None
-        shape_abstract_pre = caseabstract(context(-1, WORD))        
+        shape_abstract_pre = caseabstract(context(-1, WORD))
+        shape_ispunctuation_pre = word_unigram_pre in self.punctuation
 
         shape_islower_2pre = word_unigram_2pre.islower()
         shape_istitle_2pre = word_unigram_2pre.istitle()
@@ -159,6 +173,7 @@ class Detector(object):
         shape_mixedcase_2pre = self.mixedcase.match(context(-2, WORD)) != None
         shape_ccwp_2pre = self.ccwp.match(context(-2, WORD)) != None
         shape_abstract_2pre = caseabstract(context(-2, WORD))
+        shape_ispunctuation_2pre = word_unigram_2pre in self.punctuation
 
         shape_islower_post = word_unigram_post.islower()
         shape_istitle_post = word_unigram_post.istitle()
@@ -169,6 +184,7 @@ class Detector(object):
         shape_mixedcase_post = self.mixedcase.match(context(1, WORD)) != None
         shape_ccwp_post = self.ccwp.match(context(1, WORD)) != None
         shape_abstract_post = caseabstract(context(1, WORD))
+        shape_ispunctuation_post = word_unigram_post in self.punctuation
 
         shape_islower_2post = word_unigram_2post.islower()
         shape_istitle_2post = word_unigram_2post.istitle()
@@ -179,6 +195,7 @@ class Detector(object):
         shape_mixedcase_2post = self.mixedcase.match(context(2, WORD)) != None
         shape_ccwp_2post = self.ccwp.match(context(2, WORD)) != None
         shape_abstract_2post = caseabstract(context(2, WORD))
+        shape_ispunctuation_2post = word_unigram_2post in self.punctuation
 
         ## 2-4 suffixes in a 3 token window
         suffix_1_cur = word_unigram_cur[-1:]
@@ -237,7 +254,7 @@ class Detector(object):
         features.extend(self.known_places.get_features("gaz_place_post",
                                                        context(1, WORD)))
 
-   ##      features.extend(self.uk_companies.get_features("gaz_org_cur",
+        ## features.extend(self.uk_companies.get_features("gaz_org_cur",
 ##                                                        context(0, WORD)))
 ##         features.extend(self.uk_companies.get_features("gaz_org_pre",
 ##                                                        context(-1, WORD)))

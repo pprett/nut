@@ -26,7 +26,7 @@ def numify(s):
 class Detector(object):
 
     def __init__(self):
-        self.brown_clusters = BrownClusters("clner/en/resources/brown-clusters/" + 
+        self.brown_clusters = BrownClusters("clner/de/resources/brown-clusters/" + 
                                             "brown-clusters.txt",
                                             prefixes=[4, 6, 10, 20])
         #self.mixedcase = re.compile(r"^[A-Z]\w+[A-Z]\w*$")
