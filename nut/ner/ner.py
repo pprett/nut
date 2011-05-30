@@ -219,12 +219,19 @@ def predict():
         The predictions are appended to the test file.
         Options:
           -h, --help\tprint this help.
+          -r, --raw\twrite raw result tags (wo B- and I- prefix).
 
         """ % sys.argv[0]
     argv = sys.argv[1:]
     if "--help" in argv or "-h" in argv:
         usage()
         sys.exit(-2)
+
+    raw = False
+    if "-r" in argv or "--raw" in argv:
+        argv = [arg for arg in argv if arg not in ["-r", "--raw"]]
+        raw = True
+
     if len(argv) != 3:
         print "Error: wrong number of arguments. "
         usage()
@@ -242,6 +249,6 @@ def predict():
     else:
         f = sys.stdout
     t0 = time()
-    test_reader.write_sent_predictions(model, f, raw=False)
+    test_reader.write_sent_predictions(model, f, raw=raw)
     f.close()
     print >> sys.stderr, "processed input in %.4fs sec." % (time() - t0)
