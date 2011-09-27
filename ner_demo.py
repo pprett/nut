@@ -1,3 +1,4 @@
+#!/usr/bin/python
 """Named entity recognition demo.
 """
 
