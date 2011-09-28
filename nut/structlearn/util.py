@@ -53,7 +53,20 @@ def autolabel(instances, auxtask):
 	    if idx in indices:
 		labels[i] = 1
 		break
-	
+
+    return labels
+
+
+def autolabel_ds(ds, auxtask):
+    labels = np.ones((ds.n,), dtype=np.float32)
+    labels *= -1
+    for i, x in enumerate(ds.iterinstances()):
+	indices = x['f0']
+	for idx in auxtask:
+	    if idx in indices:
+		labels[i] = 1
+		break
+
     return labels
 
 
@@ -69,7 +82,7 @@ def count(*datasets):
     """
     if len(datasets) > 1:
 	assert functools.reduce(operator.eq,[ds.dim for ds in datasets])
-    counts = np.zeros((datasets[0].dim,),dtype=np.uint16)
+    counts = np.zeros((datasets[0].dim, ),dtype=np.uint32)
     for x, y in chain(*datasets):
 	counts[x["f0"]] += 1
     return counts

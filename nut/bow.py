@@ -64,7 +64,7 @@ def load(fname, voc, dim, maxlines=-1):
 		break
 	    label, tokens = parse_bow(line)
 	    doc = vectorize(tokens, voc)
-	    x = np.array(doc, dtype = bolt.sparsedtype)
+	    x = np.array(doc, dtype=bolt.sparsedtype)
 	    norm = np.linalg.norm(x['f1']) 
 	    if norm > 0.0:
 		x['f1'] /= norm

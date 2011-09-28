@@ -23,17 +23,16 @@ import json
 import tempfile
 import shutil
 import cPickle as pickle
+import gc
 
 from abc import ABCMeta, abstractmethod
-from copy import deepcopy
 from scipy import sparse
 from itertools import izip, count
 from collections import defaultdict
 
 from ..structlearn import util
-from ..util import timeit, trace
+from ..util import timeit
 from ..externals.joblib import Parallel, delayed
-from ..externals import bolt
 
 
 class Error(Exception):
@@ -71,18 +70,24 @@ class SerialTrainingStrategy(TrainingStrategy):
         w_data = []
         row = []
         col = []
-        original_instances = ds.instances[ds._idx]
+        original_labels = ds.labels
+        #original_instances = ds.instances[ds._idx]
 
         for j, auxtask, task_mask in izip(count(), auxtasks, task_masks):
-            instances = deepcopy(original_instances)
+            gc.collect()
+            #instances = deepcopy(original_instances)
             if inverted_index is None:
-                labels = util.autolabel(instances, auxtask)
+                labels = util.autolabel_ds(ds, auxtask)
             else:
                 occurances = inverted_index[j]
-                labels = np.ones((instances.shape[0],), dtype=np.float32)
+                #labels = np.ones((instances.shape[0],), dtype=np.float32)
+                labels = np.ones((ds.n,), dtype=np.float32)
                 labels *= -1.0
                 labels[occurances] = 1.0
-            ds = bolt.io.MemoryDataset(dim, instances, labels)
+            #ds = bolt.io.MemoryDataset(dim, instances, labels)
+
+            # set the auto-generated labels
+            ds.labels = labels
 
             mask = np.ones((dim,), dtype=np.int32, order="C")
             mask[task_mask] = 0
@@ -93,12 +98,17 @@ class SerialTrainingStrategy(TrainingStrategy):
                 col.append(j)
                 w_data.append(w[i])
             if j % 10 == 0:
-                print "%d classifiers trained..." % j
+                print("%d of %d classifiers trained..." % (j, len(auxtasks)))
 
         W = sparse.coo_matrix((w_data, (row, col)),
-                              (dim, len(auxtasks)),
-                              dtype=np.float64)
-        return W.tocsc()
+                             (dim, len(auxtasks)),
+                              dtype=np.float32)
+        gc.collect()
+        # restore original labels
+        ds.labels = original_labels
+        W = W.tocsc()
+        gc.collect()
+        return W
 
 
 class ParallelTrainingStrategy(TrainingStrategy):
@@ -118,16 +128,18 @@ class ParallelTrainingStrategy(TrainingStrategy):
         w_data = []
         row = []
         col = []
-        original_instances = ds.instances[ds._idx]
+
+        # FIXME this is costly and its only purpose is to maintain idx order
+        #original_instances = ds.instances[ds._idx]
+
         if inverted_index == None:
             inverted_index = defaultdict(lambda: None)
         print "Run joblib.Parallel"
-        
+
         res = Parallel(n_jobs=self.n_jobs, verbose=1)(
                 delayed(_train_aux_classifier)(i, auxtask,
-                                               task_mask,
-                                               original_instances,
-                                               dim, classifier_trainer,
+                                               task_mask, ds,
+                                               classifier_trainer,
                                                inverted_index[i])
             for i, auxtask, task_mask in izip(count(), auxtasks, task_masks))
 
@@ -143,8 +155,8 @@ class ParallelTrainingStrategy(TrainingStrategy):
         return W.tocsc()
 
 
-def _train_aux_classifier(i, auxtask, task_mask, instances,
-                          dim, classifier_trainer, occurrences=None):
+def _train_aux_classifier(i, auxtask, task_mask, dataset,
+                          classifier_trainer, occurrences=None):
     """Trains a single auxiliary classifier.
 
     Parameters
@@ -155,10 +167,8 @@ def _train_aux_classifier(i, auxtask, task_mask, instances,
         The auxiliary task.
     task_mask : set
         The features to mask (=set to zero).
-    original_instances : array, dtype=bolt.sparsedtype
-        The unlabeled instances.
-    dim : int
-        The dimensionality of the feature space.
+    dataset : bolt.MemoryDataset
+        The unlabeled instances
     classifier_trainer : AuxTrainer
         The concrete trainer for the auxiliary classifiers.
     inverted_index : dict
@@ -174,15 +184,16 @@ def _train_aux_classifier(i, auxtask, task_mask, instances,
         second array holds the values.
     """
     if occurrences is None:
-        labels = util.autolabel(instances, auxtask)
+        labels = util.autolabel_ds(dataset, auxtask)
     else:
-        labels = np.ones((instances.shape[0],), dtype=np.float32)
-        labels *= -1.0
+        labels = np.empty((dataset.n,), dtype=np.float32)
+        labels.fill(-1.0)
         labels[occurrences] = 1.0
-    dataset = bolt.io.MemoryDataset(dim, instances, labels)
+    #dataset = bolt.io.MemoryDataset(dim, instances, labels)
+    dataset.labels = labels
 
     # create feature mask
-    mask = np.ones((dim,), dtype=np.int32, order="C")
+    mask = np.ones((dataset.dim,), dtype=np.int32, order="C")
     mask[task_mask] = 0
     w = classifier_trainer.train_classifier(dataset, mask)
     return i, (w.nonzero()[0], w[w.nonzero()[0]])

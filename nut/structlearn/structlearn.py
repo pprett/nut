@@ -11,6 +11,7 @@ structlearn
 """
 from __future__ import division
 
+import gc
 import numpy as np
 import sparsesvd
 from collections import defaultdict
@@ -82,9 +83,10 @@ class StructLearner(object):
 
     def __init__(self, k, dataset, auxtasks, classifier_trainer,
                  training_strategy, task_masks=None,
-                 useinvertedindex=True, feature_types=None):
+                 useinvertedindex=True, feature_types=None, verbose=0):
         if k < 1 or k > len(auxtasks):
             raise Error("0 < k < m")
+        self.verbose = verbose
         self.dataset = dataset
         self.auxtasks = [np.atleast_1d(task).ravel() for task in auxtasks]
         if task_masks == None:
@@ -107,6 +109,8 @@ class StructLearner(object):
 
     @timeit
     def create_inverted_index(self):
+        if self.verbose > 1:
+            print("Create inverted index...")
         iidx = defaultdict(list)
         fid_task_map = defaultdict(list)
         for i, task in enumerate(self.task_masks):
@@ -119,8 +123,9 @@ class StructLearner(object):
                     for task_id in fid_task_map[fid]:
                         iidx[task_id].append(i)
 
-        iidx = dict((task_id, np.unique(np.array(occurances))) for task_id,
-                    occurances in iidx.iteritems())
+        iidx = dict((task_id, np.unique(np.array(occurances, dtype=np.int32)))
+                    for task_id, occurances in iidx.iteritems())
+        gc.collect()
         self.inverted_index = iidx
 
     @timeit
@@ -133,6 +138,10 @@ class StructLearner(object):
                                                          self.task_masks,
                                                          self.classifier_trainer,
                                                          inverted_index=self.inverted_index)
+        # FIXME only for SSFE2011
+        del self.dataset
+        del self.inverted_index
+        gc.collect()
         density = W.nnz / float(W.shape[0] * W.shape[1])
         print "density of W: %.8f" % density
         if store_W:
@@ -179,29 +188,33 @@ class StructLearner(object):
         """
         k = self.k
 
-        # create theta^t
-        thetat = np.zeros((W.shape[0], k),
-                          dtype=np.float64)
-        #col_offset = 0
-        for f_min, f_max in self.feature_type_split:
-            print "_" * 40
-            print "block (%d, %d)" % (f_min, f_max)
-            A = W[f_min:f_max + 1]
-            print "A.nnz:", A.nnz
-            print "A.shape:", A.shape
-            Ut, s, Vt = sparsesvd.sparsesvd(A, k)
-            print "Ut.shape", Ut.shape
-            if s.shape[0] == 0 or np.all(s == 0.0):
-                print "skip block (%d, %d)" % (f_min, f_max)
-                continue
-            print "Spectrum: %.4f - %.4f" % (s.min(), s.max())
+        thetat, _, _ = sparsesvd.sparsesvd(W, k)
+        thetat = thetat.T
 
-            # check feature span of Ut
-            span = (f_max + 1) - f_min
-            assert Ut.shape[1] == span
+        ## FIXME for SSFE2011
+        ## # create theta^t
+##         thetat = np.zeros((W.shape[0], k),
+##                           dtype=np.float64)
+##         #col_offset = 0
+##         for f_min, f_max in self.feature_type_split:
+##             print "_" * 40
+##             print "block (%d, %d)" % (f_min, f_max)
+##             A = W[f_min:f_max + 1]
+##             print "A.nnz:", A.nnz
+##             print "A.shape:", A.shape
+##             Ut, s, Vt = sparsesvd.sparsesvd(A, k)
+##             print "Ut.shape", Ut.shape
+##             if s.shape[0] == 0 or np.all(s == 0.0):
+##                 print "skip block (%d, %d)" % (f_min, f_max)
+##                 continue
+##             print "Spectrum: %.4f - %.4f" % (s.min(), s.max())
 
-            # If Ut.shape[0] != k the missing cols of thetat are padded with zeros.
-            thetat[f_min:f_max + 1, :Ut.shape[0]] = Ut.T
+##             # check feature span of Ut
+##             span = (f_max + 1) - f_min
+##             assert Ut.shape[1] == span
+
+##             # If Ut.shape[0] != k the missing cols of thetat are padded with zeros.
+##             thetat[f_min:f_max + 1, :Ut.shape[0]] = Ut.T
 
         if thetat == None:
             raise Exception("Error in compute_svd; spectrum is too small. "\

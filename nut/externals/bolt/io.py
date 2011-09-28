@@ -93,7 +93,7 @@ class MemoryDataset(Dataset):
     .. todo:
       Implement in Cython if CEP 307 is done.
     """
-    def __init__(self, dim, instances, labels, qids=None):
+    def __init__(self, dim, instances, labels, idx=None, qids=None):
         """
         :arg dim: The dimensionality of the data; the number of features.
         :type dim: integer
@@ -120,7 +120,12 @@ class MemoryDataset(Dataset):
         """The array holding the instances. """
         self.labels = labels
         """The array holding the labels. """
-        self._idx = np.arange(self.n)
+        if idx is None:
+            self._idx = np.arange(self.n)
+        else:
+            assert isinstance(idx, np.ndarray)
+            assert idx.shape[0] == self.n
+            self._idx = idx
         """The indexing array. """
         self.classes = np.unique(labels)
         """The classes. """
@@ -210,7 +215,7 @@ class MemoryDataset(Dataset):
         return MemoryDataset(dsets[0].dim, instances, labels, qids = qids)        
 
     @classmethod
-    def load(cls, fname, verbose = 1, qids = False):
+    def load(cls, fname, verbose=1, qids=False):
         """Loads the dataset from `fname`.
 
         Currently, two formats are supported:
@@ -279,9 +284,10 @@ class MemoryDataset(Dataset):
         f = open(fname,'w+b')
         try:
             # FIXME we should also store self._idx.
-            np.save(f,self.instances[self._idx])
-            np.save(f,self.labels[self._idx])
+            np.save(f,self.instances)
+            np.save(f,self.labels)
             np.save(f,self.dim)
+            np.save(f, self._idx)
             if self.qids != None:
                 np.save(f,self.qids)
         finally:
@@ -303,7 +309,7 @@ class BinaryDataset(Dataset):
         self.c = c
         self.n = dataset.n
         self.dim = dataset.dim
-        self.classes = np.array([1,-1],dtype=np.float32)
+        self.classes = np.array([1, -1],dtype=np.float32)
 
     def __iter__(self):
         return ((x,self.mask(y)) for x,y in self._dataset)
@@ -329,7 +335,8 @@ def load_npz(filename, qids=False):
         instances = np.load(f)
         labels = np.load(f)
         dim = np.load(f)
-        res = [dim, instances, labels]
+        _idx = np.load(f)
+        res = [dim, instances, labels, _idx]
         if qids:
             qids = np.load(f)
             res.append(qids)
@@ -358,8 +365,9 @@ def load_dat(filename, qids=False):
             if len(tokens) > 0 and tokens[0].startswith("qid"):
                 queries.append(int(tokens[0].split(":")[1]))
                 del tokens[0]
-        
-            tokens=[(int(t[0]),float(t[1]))
+
+            # use fx_idx -1 because svmlight starts with 1
+            tokens=[(int(t[0]) - 1,float(t[1]))
                     for t in (t.split(':')
                               for t in tokens if t != '')]
             tokens = sorted(tokens)
@@ -371,7 +379,7 @@ def load_dat(filename, qids=False):
                 global_max = local_max
             instances.append(a)
         res = [global_max+1, fromlist(instances, np.object),
-               np.array(labels)]
+               np.array(labels), np.arange(len(instances))]
         if qids:
             res.append(fromlist(queries, np.int32))
         return res
