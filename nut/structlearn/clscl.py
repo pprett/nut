@@ -230,6 +230,7 @@ class CLSCLTrainer(object):
         print("|pivots| = %d" % len(pivots))
         ds = bolt.io.MemoryDataset.merge((self.s_unlabeled,
                                           self.t_unlabeled))
+        print("|V| = %d" % ds.dim)
         ds.shuffle(13)
         struct_learner = structlearn.StructLearner(k, ds, pivots,
                                                    self.trainer,

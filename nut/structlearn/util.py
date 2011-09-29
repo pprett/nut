@@ -69,7 +69,7 @@ def count(*datasets):
     """
     if len(datasets) > 1:
 	assert functools.reduce(operator.eq,[ds.dim for ds in datasets])
-    counts = np.zeros((datasets[0].dim,),dtype=np.uint16)
+    counts = np.zeros((datasets[0].dim,), dtype=np.uint32)  # FIXME here was uint16
     for x, y in chain(*datasets):
 	counts[x["f0"]] += 1
     return counts

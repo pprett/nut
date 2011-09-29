@@ -113,7 +113,7 @@ class StructLearner(object):
             for fx in task:
                 fid_task_map[fx].append(i)
 
-        for i, x in enumerate(self.dataset.iterinstances()):
+        for i, x in enumerate(self.dataset.instances):
             for fid, fval in x:
                 if fid in fid_task_map:
                     for task_id in fid_task_map[fid]:
@@ -179,29 +179,39 @@ class StructLearner(object):
         """
         k = self.k
 
-        # create theta^t
-        thetat = np.zeros((W.shape[0], k),
-                          dtype=np.float64)
-        #col_offset = 0
-        for f_min, f_max in self.feature_type_split:
-            print "_" * 40
-            print "block (%d, %d)" % (f_min, f_max)
-            A = W[f_min:f_max + 1]
-            print "A.nnz:", A.nnz
-            print "A.shape:", A.shape
-            Ut, s, Vt = sparsesvd.sparsesvd(A, k)
+        if self.feature_type_split.shape[0] == 1:
+            print("Compute SVD w/o feature type splits")
+            print "W.nnz:", W.nnz
+            print "W.shape:", W.shape
+            Ut, s, _ = sparsesvd.sparsesvd(W, k)
             print "Ut.shape", Ut.shape
-            if s.shape[0] == 0 or np.all(s == 0.0):
-                print "skip block (%d, %d)" % (f_min, f_max)
-                continue
-            print "Spectrum: %.4f - %.4f" % (s.min(), s.max())
+            print("Spectrum: %.4f - %.4f" % (s.min(), s.max()))
+            thetat = Ut.T
+        else:
 
-            # check feature span of Ut
-            span = (f_max + 1) - f_min
-            assert Ut.shape[1] == span
+            # create theta^t
+            thetat = np.zeros((W.shape[0], k),
+                              dtype=np.float64)
+            #col_offset = 0
+            for f_min, f_max in self.feature_type_split:
+                print "_" * 40
+                print "block (%d, %d)" % (f_min, f_max)
+                A = W[f_min:f_max + 1]
+                print "A.nnz:", A.nnz
+                print "A.shape:", A.shape
+                Ut, s, Vt = sparsesvd.sparsesvd(A, k)
+                print "Ut.shape", Ut.shape
+                if s.shape[0] == 0 or np.all(s == 0.0):
+                    print "skip block (%d, %d)" % (f_min, f_max)
+                    continue
+                print "Spectrum: %.4f - %.4f" % (s.min(), s.max())
 
-            # If Ut.shape[0] != k the missing cols of thetat are padded with zeros.
-            thetat[f_min:f_max + 1, :Ut.shape[0]] = Ut.T
+                # check feature span of Ut
+                span = (f_max + 1) - f_min
+                assert Ut.shape[1] == span
+
+                # If Ut.shape[0] != k the missing cols of thetat are padded with zeros.
+                thetat[f_min:f_max + 1, :Ut.shape[0]] = Ut.T
 
         if thetat == None:
             raise Exception("Error in compute_svd; spectrum is too small. "\
@@ -256,7 +266,7 @@ class StructLearner(object):
                                        side="right")
         for (j, v), idx in izip(x, type_indices):
             assert j < dim
-            res[(idx-1) * k:idx * k] += (v * self.thetat[j])
+            res[(idx - 1) * k:idx * k] += (v * self.thetat[j])
         return res
 
     def project_instance_dense_nosplit(self, x):

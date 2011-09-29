@@ -25,7 +25,6 @@ import shutil
 import cPickle as pickle
 
 from abc import ABCMeta, abstractmethod
-from copy import deepcopy
 from scipy import sparse
 from itertools import izip, count
 from collections import defaultdict
@@ -33,7 +32,6 @@ from collections import defaultdict
 from ..structlearn import util
 from ..util import timeit, trace
 from ..externals.joblib import Parallel, delayed
-from ..externals import bolt
 
 
 class Error(Exception):
@@ -71,18 +69,18 @@ class SerialTrainingStrategy(TrainingStrategy):
         w_data = []
         row = []
         col = []
-        original_instances = ds.instances[ds._idx]
 
         for j, auxtask, task_mask in izip(count(), auxtasks, task_masks):
-            instances = deepcopy(original_instances)
+
             if inverted_index is None:
-                labels = util.autolabel(instances, auxtask)
+                labels = util.autolabel(ds.instances, auxtask)
             else:
                 occurances = inverted_index[j]
-                labels = np.ones((instances.shape[0],), dtype=np.float32)
+                labels = np.ones((ds.n,), dtype=np.float32)
                 labels *= -1.0
                 labels[occurances] = 1.0
-            ds = bolt.io.MemoryDataset(dim, instances, labels)
+
+            ds.labels = labels
 
             mask = np.ones((dim,), dtype=np.int32, order="C")
             mask[task_mask] = 0
@@ -118,16 +116,14 @@ class ParallelTrainingStrategy(TrainingStrategy):
         w_data = []
         row = []
         col = []
-        original_instances = ds.instances[ds._idx]
+
         if inverted_index == None:
             inverted_index = defaultdict(lambda: None)
         print "Run joblib.Parallel"
-        
         res = Parallel(n_jobs=self.n_jobs, verbose=1)(
                 delayed(_train_aux_classifier)(i, auxtask,
                                                task_mask,
-                                               original_instances,
-                                               dim, classifier_trainer,
+                                               ds, classifier_trainer,
                                                inverted_index[i])
             for i, auxtask, task_mask in izip(count(), auxtasks, task_masks))
 
@@ -143,8 +139,8 @@ class ParallelTrainingStrategy(TrainingStrategy):
         return W.tocsc()
 
 
-def _train_aux_classifier(i, auxtask, task_mask, instances,
-                          dim, classifier_trainer, occurrences=None):
+def _train_aux_classifier(i, auxtask, task_mask, ds,
+                          classifier_trainer, occurrences=None):
     """Trains a single auxiliary classifier.
 
     Parameters
@@ -161,8 +157,9 @@ def _train_aux_classifier(i, auxtask, task_mask, instances,
         The dimensionality of the feature space.
     classifier_trainer : AuxTrainer
         The concrete trainer for the auxiliary classifiers.
-    inverted_index : dict
-        The inverted index - if any.
+    occurrencs : array
+        The inverted index posting list for the task - if any.
+        The indices in the list are w.r.t. ds.instances and not ds._idx!
 
     Returns
     -------
@@ -174,17 +171,17 @@ def _train_aux_classifier(i, auxtask, task_mask, instances,
         second array holds the values.
     """
     if occurrences is None:
-        labels = util.autolabel(instances, auxtask)
+        labels = util.autolabel(ds.instances, auxtask)
     else:
-        labels = np.ones((instances.shape[0],), dtype=np.float32)
+        labels = np.ones((ds.n,), dtype=np.float32)
         labels *= -1.0
         labels[occurrences] = 1.0
-    dataset = bolt.io.MemoryDataset(dim, instances, labels)
 
+    ds.labels = labels
     # create feature mask
-    mask = np.ones((dim,), dtype=np.int32, order="C")
+    mask = np.ones((ds.dim,), dtype=np.int32, order="C")
     mask[task_mask] = 0
-    w = classifier_trainer.train_classifier(dataset, mask)
+    w = classifier_trainer.train_classifier(ds, mask)
     return i, (w.nonzero()[0], w[w.nonzero()[0]])
 
 
