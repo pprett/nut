@@ -143,7 +143,12 @@ class ParallelTrainingStrategy(TrainingStrategy):
                                                inverted_index[i])
             for i, auxtask, task_mask in izip(count(), auxtasks, task_masks))
 
+        ## FIXME there might be a more efficient way than using lists
+        ##       (e.g. np.fromiter)
+        info = []
         for i, (fx_idxs, fx_vals) in res:
+            info.append((fx_idxs.shape[0], fx_vals.mean(), fx_vals.std()))
+            print info[-1]
             for fx_idx, fx_val in izip(fx_idxs, fx_vals):
                 row.append(fx_idx)
                 col.append(i)
@@ -152,6 +157,11 @@ class ParallelTrainingStrategy(TrainingStrategy):
         W = sparse.coo_matrix((w_data, (row, col)),
                               (dim, len(auxtasks)),
                               dtype=np.float64)
+        print "_" * 80
+        print "Aux predictor info"
+        print
+        print info
+        print "_" * 80
         return W.tocsc()
 
 

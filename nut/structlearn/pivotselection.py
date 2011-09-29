@@ -150,3 +150,16 @@ def roundrobin(*iterables):
         except StopIteration:
             pending -= 1
             nexts = cycle(islice(nexts, pending))
+
+
+class L1Selector(PivotSelector):
+    """Selects pivots by training a L1 regularized SVM on the training data. """
+    
+    def select(self, ds, preselection=None):
+        model = bolt.LinearModel(ds.dim, biasterm=False)
+        loss = bolt.ModifiedHuber()
+        trainer = bolt.SGD(loss, 0.001, epochs=20, norm=1)
+        trainer.train(model, ds, verbose=0, shuffle=False)
+        w = model.w**2.0
+        for fx_idx in np.argsort(w)[::-1]:
+            yield fx_idx

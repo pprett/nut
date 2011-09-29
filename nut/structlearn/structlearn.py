@@ -125,7 +125,6 @@ class StructLearner(object):
 
         iidx = dict((task_id, np.unique(np.array(occurances, dtype=np.int32)))
                     for task_id, occurances in iidx.iteritems())
-        gc.collect()
         self.inverted_index = iidx
 
     @timeit
@@ -133,13 +132,10 @@ class StructLearner(object):
         """
         Learns the structural parameter theta from the auxiliary tasks.
         """
-        W = self.training_strategy.train_aux_classifiers(self.dataset,
-                                                         self.auxtasks,
-                                                         self.task_masks,
-                                                         self.classifier_trainer,
-                                                         inverted_index=self.inverted_index)
-        # FIXME only for SSFE2011
-        del self.dataset
+        W = self.training_strategy.train_aux_classifiers(
+            self.dataset, self.auxtasks, self.task_masks,
+            self.classifier_trainer, inverted_index=self.inverted_index)
+
         del self.inverted_index
         gc.collect()
         density = W.nnz / float(W.shape[0] * W.shape[1])
@@ -188,41 +184,43 @@ class StructLearner(object):
         """
         k = self.k
 
-        thetat, _, _ = sparsesvd.sparsesvd(W, k)
-        thetat = thetat.T
+        if self.feature_type_split.shape[0] == 1:
+            print("Compute SVD w/o feature type splits")
+            thetat, s, _ = sparsesvd.sparsesvd(W, k)
+            print("Spectrum: %.4f - %.4f" % (s.min(), s.max()))
+            thetat = thetat.T
+        else:
+            # create theta^t
+            thetat = np.zeros((W.shape[0], k),
+                          dtype=np.float64)
+            #col_offset = 0
+            for f_min, f_max in self.feature_type_split:
+                print("_" * 40)
+                print("block (%d, %d)" % (f_min, f_max))
+                A = W[f_min:f_max + 1]
+                print("A.nnz:", A.nnz)
+                print("A.shape:", A.shape)
+                Ut, s, Vt = sparsesvd.sparsesvd(A, k)
+                print("Ut.shape", Ut.shape)
+                if s.shape[0] == 0 or np.all(s == 0.0):
+                    print("skip block (%d, %d)" % (f_min, f_max))
+                    continue
+                print("Spectrum: %.4f - %.4f" % (s.min(), s.max()))
 
-        ## FIXME for SSFE2011
-        ## # create theta^t
-##         thetat = np.zeros((W.shape[0], k),
-##                           dtype=np.float64)
-##         #col_offset = 0
-##         for f_min, f_max in self.feature_type_split:
-##             print "_" * 40
-##             print "block (%d, %d)" % (f_min, f_max)
-##             A = W[f_min:f_max + 1]
-##             print "A.nnz:", A.nnz
-##             print "A.shape:", A.shape
-##             Ut, s, Vt = sparsesvd.sparsesvd(A, k)
-##             print "Ut.shape", Ut.shape
-##             if s.shape[0] == 0 or np.all(s == 0.0):
-##                 print "skip block (%d, %d)" % (f_min, f_max)
-##                 continue
-##             print "Spectrum: %.4f - %.4f" % (s.min(), s.max())
+                # check feature span of Ut
+                span = (f_max + 1) - f_min
+                assert Ut.shape[1] == span
 
-##             # check feature span of Ut
-##             span = (f_max + 1) - f_min
-##             assert Ut.shape[1] == span
-
-##             # If Ut.shape[0] != k the missing cols of thetat are padded with zeros.
-##             thetat[f_min:f_max + 1, :Ut.shape[0]] = Ut.T
+                # If Ut.shape[0] != k the missing cols of thetat are padded with zeros.
+                thetat[f_min:f_max + 1, :Ut.shape[0]] = Ut.T
 
         if thetat == None:
             raise Exception("Error in compute_svd; spectrum is too small. "\
                             "It seems that W is too sparse?")
-        print "_" * 80
-        print "thetat.shape", thetat.shape
-        print "dim of embedding: %d" % (thetat.shape[1] * \
-                                        self.feature_type_split.shape[0])
+        print("_" * 80)
+        print("thetat.shape", thetat.shape)
+        print("dim of embedding: %d" % (thetat.shape[1] * \
+                                        self.feature_type_split.shape[0]))
         return thetat
 
     @timeit

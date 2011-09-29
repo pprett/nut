@@ -8,6 +8,14 @@ import gc
 from itertools import islice
 from functools import partial
 
+#FIXME
+from sklearn.svm import LinearSVC
+from sklearn.svm import SVC
+from sklearn.linear_model import SGDClassifier
+from sklearn import cross_validation
+from sklearn import metrics
+from sklearn.utils import shuffle
+
 from ..structlearn import pivotselection
 from ..structlearn import util
 from ..structlearn import structlearn
@@ -71,7 +79,6 @@ class ASOModel(object):
         self.std = std
         self.avg_norm = avg_norm
 
-    @timeit
     def project(self, ds):
         """Projects the given dataset onto the space induces by `self.thetat`
         and postprocesses the projection using `mean`, `std`, and `avg_norm`.
@@ -95,13 +102,16 @@ class ASOModel(object):
         if self.avg_norm != None:
             dense_instances /= self.avg_norm
 
-        instances = structlearn.to_sparse_bolt(dense_instances)
-        dim = struct_learner.thetat.shape[1] * \
-              struct_learner.feature_type_split.shape[0]
-        labels = ds.labels
-        new_ds = bolt.io.MemoryDataset(dim, instances, labels)
-        new_ds._idx = ds._idx
-        return new_ds
+        return dense_instances
+        
+
+##         instances = structlearn.to_sparse_bolt(dense_instances)
+##         dim = struct_learner.thetat.shape[1] * \
+##               struct_learner.feature_type_split.shape[0]
+##         labels = ds.labels
+##         new_ds = bolt.io.MemoryDataset(dim, instances, labels)
+##         new_ds._idx = ds._idx
+##         return new_ds
 
 
 class ASOTrainer(object):
@@ -170,32 +180,15 @@ class ASOTrainer(object):
             print("Call pivotselector.select...")
         candidates = self.pivotselector.select(self._train)
 
-        ## FIXME should we blacklist the most frequent features (prob. dense)
-##         black_list =
-##         array([701432,  62099, 843502, 101914, 279792, 573562, 551356, 239636,
-##        368286, 416075, 806982, 627718, 973716, 231223, 367327, 230426,
-##        171596, 284271, 473867, 421964, 285375, 568057, 910571, 771271,
-##          3535, 398631, 692537, 719515, 113574,  16404, 875986, 157743,
-##        497188, 945220, 132926, 371734,  91691, 600787, 423244, 334468,
-##        341803, 583079, 599174, 240221,  26592, 702636, 158843, 133568,
-##        118202, 181154, 942979,  40525, 492909, 545485,  36740, 202153,
-##        780397, 519957,  75799, 831822, 729004, 922497,  13549, 520397,
-##        156930, 877812,  55628,  20935, 346018, 286246, 611334, 400465,
-##        810119, 937056, 471148, 689076, 949127, 609496, 954762, 630304,
-##         61630,  58807, 514177, 406024, 634155, 547290, 825808, 143016,
-##        717016, 511516, 422441, 206499, 908871, 814089, 877133, 366388,
-##        934932, 921964, 870013, 174905])
+        ## FIXME some features are really common
+        upper_phi = 250000
 
-        upper_phi = 200000
-        
-        if self.verbose > 1:
-            print("Counting terms in unlabeled data...")
         counts = util.count(self.unlabeled)
-        pivots = (p for p in candidates if counts[p] >= phi and counts[p] < upper_phi)
+        pivots = (p for p in candidates if (counts[p] >= phi and counts[p] < upper_phi))
         pivots = np.array([p for p in islice(pivots, m)], dtype=np.int32)
 
-        from IPython import embed
-        embed()
+        #from IPython import embed
+        #embed()
 
         return pivots
 
@@ -228,14 +221,13 @@ class ASOTrainer(object):
                                                    self.trainer,
                                                    self.strategy,
                                                    useinvertedindex=True)
-        del self.unlabeled
         struct_learner.learn()
-        gc.collect()
 
+        gc.collect()
         self.project(struct_learner, verbose=1)
 
         return ASOModel(struct_learner, mean=self.mean,
-                          std=self.std, avg_norm=self.avg_norm)
+                        std=self.std, avg_norm=self.avg_norm)
 
     @timeit
     def project(self, struct_learner, verbose=1):
@@ -254,22 +246,23 @@ class ASOTrainer(object):
         #                                   dense=True)
 
         #data = np.concatenate((train, unlabeled))
-        data = train
+        data = train  # FIXME rm
         mean = data.mean(axis=0)
         std = data.std(axis=0)
         std[std == 0.0] = 1.0
         self.mean, self.std = mean, std
         standardize(train, mean, std)
+        ## FIXME should we use norms?
+##         norms = np.sqrt((train * train).sum(axis=1))
+##         avg_norm = np.mean(norms)
+##         self.avg_norm = avg_norm
+##         train /= avg_norm
+        self.avg_norm = None
 
-        norms = np.sqrt((train * train).sum(axis=1))
-        avg_norm = np.mean(norms)
-        self.avg_norm = avg_norm
-        train /= avg_norm
-
-        dim = struct_learner.thetat.shape[1] * \
-              struct_learner.feature_type_split.shape[0]
-        self._train.instances = structlearn.to_sparse_bolt(train)
-        self._train.dim = dim
+        #dim = struct_learner.thetat.shape[1] * \
+        #      struct_learner.feature_type_split.shape[0]
+        #self._train.instances = structlearn.to_sparse_bolt(train)
+        #self._train.dim = dim
 
 
 def train_args_parser():
@@ -317,7 +310,7 @@ def train_args_parser():
     parser.add_option("-p", "--phi",
                       dest="phi",
                       help="minimum support of pivots.",
-                      default=10000,
+                      default=1000,
                       metavar="int",
                       type="int")
 
@@ -325,7 +318,7 @@ def train_args_parser():
                       dest="preg",
                       help="regularization parameter lambda for " \
                       "the pivot classifiers.",
-                      default=0.0001,
+                      default=0.001,
                       metavar="float",
                       type="float")
 
@@ -383,7 +376,7 @@ def train():
 
     pivotselector = pivotselection.MISelector()
     trainer = auxtrainer.ElasticNetTrainer(options.preg, options.alpha,
-                                           10.0**6)
+                                           11.0**6)
     strategy_factory = {"hadoop": auxstrategy.HadoopTrainingStrategy,
                         "serial": auxstrategy.SerialTrainingStrategy,
                         "parallel": partial(auxstrategy.ParallelTrainingStrategy,
@@ -395,6 +388,7 @@ def train():
     # now trainer is the only one to hold a ref
     del unlabeled
     model = aso_trainer.train(options.m, options.phi, options.k)
+    
     compressed_dump(argv[2], model)
 
 
@@ -466,9 +460,90 @@ def predict():
     print("theta^T: ", model.struct_learner.thetat.shape)
 
     train = bolt.MemoryDataset.load(fname_train)
+    test = bolt.MemoryDataset.load(fname_test)
+    assert train.dim == test.dim
 
-    train = model.project(train)
-    train.store('ssfe_train.npy')
+##     model.mean = None
+##     model.std = None
+    print "mean:", model.mean
+    print "std:", model.std
+    
+    train_dense = model.project(train)
+    test_dense = model.project(test)
+
+    ## FIXME should we use norms?
+##     norms = np.sqrt((train_dense * train_dense).sum(axis=1))
+##     avg_norm = np.mean(norms)
+##     print "avg_norm", avg_norm
+##     train_dense /= avg_norm
+##     test_dense /= avg_norm
+
+    print("train-mean:", train_dense.mean(axis=0))
+    print("train-std:", train_dense.std(axis=0))
+
+    print "_" * 80
+
+    # copy original data because we need the precise order later
+    X = train_dense.copy()
+    y = train.labels.copy()
+
+    X, y = shuffle(X, y, random_state=13)
+    
+    print "X.shape", X.shape, y.shape
+    clf = LinearSVC(loss='l2', penalty='l2', C=1.0,
+                    dual=False, tol=1e-4)
+    #clf = SVC(kernel='linear', C=1.0, probability=True, shrinking=False)
+    #clf = SGDClassifier(loss='modified_huber', penalty='l2',
+    #                    n_iter=20, alpha=0.001)
+
+    cv = cross_validation.StratifiedKFold(y, 3)
+
+
+    print "_" * 80
+    print clf
+    print
+    aucs, zos = [], []
+    for train_idx, test_idx in cv:
+        X_train, X_test = X[train_idx], X[test_idx]
+        y_train, y_test = y[train_idx], y[test_idx]
+        clf.fit(X_train, y_train)
+        #scores = clf.predict_proba(X_test)[:,1].ravel()
+        scores = clf.decision_function(X_test)
+        y_pred = clf.predict(X_test)
+        fpr, tpr, thresholds = metrics.roc_curve(y_test, scores)
+        aucs.append(metrics.auc(fpr, tpr))
+        zos.append(metrics.zero_one_score(y_test, y_pred))
+
+    print np.mean(aucs), np.std(aucs)
+
+    print "_" * 80
+
+    #from IPython import embed
+    #embed()
+
+    #np.savetxt('transformed_public_train.dat', train_dense, delimiter=",", fmt="%.6f")
+    #np.savetxt('transformed_public_test.dat', test_dense, delimiter=",", fmt="%.6f")
+
+
+    # Now prepare the submission
+    print("Make submission")
+    X_train = train_dense
+    y_train = train.labels
+    X_test = test_dense
+    
+    clf = LinearSVC(loss='l2', penalty='l2', C=1.0,
+                    dual=False, tol=1e-4)
+    clf.fit(X_train, y_train)
+    
+    #from IPython import embed
+    #embed()
+    
+    scores = clf.decision_function(X_test)
+    submission_data = np.hstack((scores, test_dense))
+    np.savetxt('submission.csv', submission_data, delimiter=",", fmt="%.6f")
+    
+    print("fin")
+    
 ##     #test = model.project(test)
 
 ##     del model  # free model

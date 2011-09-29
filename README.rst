@@ -96,7 +96,7 @@ Prediction script for CLSCL.
 
 Usage::
 
-    $ ./clscl_predict cls-acl10-processed/en/books/train.processed model.bz2 cls-acl10-processed/de/books/test.processed 0.01
+    $ ./clscl_predict cls-acl10-processed/en/books/train.processed model.bz2 cls-acl10-processed/de/books/test.processed -r 0.01
     |V_S| = 64682
     |V_T| = 106024
     |V| = 170706
