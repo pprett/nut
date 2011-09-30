@@ -71,20 +71,17 @@ class SerialTrainingStrategy(TrainingStrategy):
         row = []
         col = []
         original_labels = ds.labels
-        #original_instances = ds.instances[ds._idx]
 
         for j, auxtask, task_mask in izip(count(), auxtasks, task_masks):
             gc.collect()
-            #instances = deepcopy(original_instances)
             if inverted_index is None:
-                labels = util.autolabel_ds(ds, auxtask)
+                labels = util.autolabel(ds.instances, auxtask)
             else:
                 occurances = inverted_index[j]
                 #labels = np.ones((instances.shape[0],), dtype=np.float32)
                 labels = np.ones((ds.n,), dtype=np.float32)
                 labels *= -1.0
                 labels[occurances] = 1.0
-            #ds = bolt.io.MemoryDataset(dim, instances, labels)
 
             # set the auto-generated labels
             ds.labels = labels
@@ -129,9 +126,6 @@ class ParallelTrainingStrategy(TrainingStrategy):
         row = []
         col = []
 
-        # FIXME this is costly and its only purpose is to maintain idx order
-        #original_instances = ds.instances[ds._idx]
-
         if inverted_index == None:
             inverted_index = defaultdict(lambda: None)
         print "Run joblib.Parallel"
@@ -145,10 +139,10 @@ class ParallelTrainingStrategy(TrainingStrategy):
 
         ## FIXME there might be a more efficient way than using lists
         ##       (e.g. np.fromiter)
-        info = []
+        #info = []
         for i, (fx_idxs, fx_vals) in res:
-            info.append((fx_idxs.shape[0], fx_vals.mean(), fx_vals.std()))
-            print info[-1]
+            #info.append((fx_idxs.shape[0], fx_vals.mean(), fx_vals.std()))
+            #print info[-1]
             for fx_idx, fx_val in izip(fx_idxs, fx_vals):
                 row.append(fx_idx)
                 col.append(i)
@@ -157,11 +151,11 @@ class ParallelTrainingStrategy(TrainingStrategy):
         W = sparse.coo_matrix((w_data, (row, col)),
                               (dim, len(auxtasks)),
                               dtype=np.float64)
-        print "_" * 80
-        print "Aux predictor info"
-        print
-        print info
-        print "_" * 80
+##         print "_" * 80
+##         print "Aux predictor info"
+##         print
+##         print info
+##         print "_" * 80
         return W.tocsc()
 
 
@@ -194,19 +188,24 @@ def _train_aux_classifier(i, auxtask, task_mask, dataset,
         second array holds the values.
     """
     if occurrences is None:
+        #labels = util.autolabel(dataset.instances, auxtask)
         labels = util.autolabel_ds(dataset, auxtask)
     else:
         labels = np.empty((dataset.n,), dtype=np.float32)
         labels.fill(-1.0)
         labels[occurrences] = 1.0
-    #dataset = bolt.io.MemoryDataset(dim, instances, labels)
+
     dataset.labels = labels
 
     # create feature mask
     mask = np.ones((dataset.dim,), dtype=np.int32, order="C")
     mask[task_mask] = 0
     w = classifier_trainer.train_classifier(dataset, mask)
-    return i, (w.nonzero()[0], w[w.nonzero()[0]])
+    nnz = w.nonzero()[0]
+    nnz_w = w.take(nnz, axis=0)
+    print("%d, %d, %.4f, %.4f" % ((labels[labels == 1]).shape[0], nnz.shape[0],
+                                  nnz_w.mean(), nnz_w.std()))
+    return i, (nnz, nnz_w)
 
 
 class HadoopTrainingStrategy(TrainingStrategy):

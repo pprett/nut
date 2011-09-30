@@ -117,7 +117,7 @@ class StructLearner(object):
             for fx in task:
                 fid_task_map[fx].append(i)
 
-        for i, x in enumerate(self.dataset.iterinstances()):
+        for i, x in enumerate(self.dataset.instances):
             for fid, fval in x:
                 if fid in fid_task_map:
                     for task_id in fid_task_map[fid]:
@@ -136,7 +136,9 @@ class StructLearner(object):
             self.dataset, self.auxtasks, self.task_masks,
             self.classifier_trainer, inverted_index=self.inverted_index)
 
-        del self.inverted_index
+        if self.inverted_index is not None:
+           del self.inverted_index
+
         gc.collect()
         density = W.nnz / float(W.shape[0] * W.shape[1])
         print "density of W: %.8f" % density
@@ -186,9 +188,12 @@ class StructLearner(object):
 
         if self.feature_type_split.shape[0] == 1:
             print("Compute SVD w/o feature type splits")
-            thetat, s, _ = sparsesvd.sparsesvd(W, k)
+            print("W.nnz:", W.nnz)
+            print("W.shape:", W.shape)
+            Ut, s, _ = sparsesvd.sparsesvd(W, k)
+            print("Ut.shape", Ut.shape)
             print("Spectrum: %.4f - %.4f" % (s.min(), s.max()))
-            thetat = thetat.T
+            thetat = Ut.T
         else:
             # create theta^t
             thetat = np.zeros((W.shape[0], k),

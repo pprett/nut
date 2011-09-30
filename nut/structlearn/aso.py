@@ -181,7 +181,7 @@ class ASOTrainer(object):
         candidates = self.pivotselector.select(self._train)
 
         ## FIXME some features are really common
-        upper_phi = 250000
+        upper_phi = 1000000  #250000
 
         counts = util.count(self.unlabeled)
         pivots = (p for p in candidates if (counts[p] >= phi and counts[p] < upper_phi))
@@ -220,12 +220,13 @@ class ASOTrainer(object):
         struct_learner = structlearn.StructLearner(k, self.unlabeled, pivots,
                                                    self.trainer,
                                                    self.strategy,
-                                                   useinvertedindex=True)
+                                                   useinvertedindex=False)
         struct_learner.learn()
 
         gc.collect()
         self.project(struct_learner, verbose=1)
-
+        del struct_learner.dataset
+        
         return ASOModel(struct_learner, mean=self.mean,
                         std=self.std, avg_norm=self.avg_norm)
 
@@ -376,7 +377,7 @@ def train():
 
     pivotselector = pivotselection.MISelector()
     trainer = auxtrainer.ElasticNetTrainer(options.preg, options.alpha,
-                                           11.0**6)
+                                           10.0**6)
     strategy_factory = {"hadoop": auxstrategy.HadoopTrainingStrategy,
                         "serial": auxstrategy.SerialTrainingStrategy,
                         "parallel": partial(auxstrategy.ParallelTrainingStrategy,
