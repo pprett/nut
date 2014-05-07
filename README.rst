@@ -228,7 +228,7 @@ References
 ----------
 
 .. [#f1] http://pypi.python.org/pypi/sparsesvd/0.1.4
-.. [#f2] http://www.uni-weimar.de/medien/webis/research/corpora/webis-cls-10/cls-acl10-processed.tar.gz
+.. [#f2] http://www.webis.de/research/corpora/corpus-webis-cls-10/cls-acl10-processed.tar.gz
 .. [#f3] https://github.com/pprett/bolt/tree/feature-mask
 .. [#f4] For German we use the updated version of CoNLL03 by Sven Hartrumpf. 
 
